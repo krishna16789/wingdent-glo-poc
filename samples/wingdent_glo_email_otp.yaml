@@ -1,0 +1,137 @@
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Wingdent-Glo PoC Infrastructure with Email-based OTP via AWS Cognito
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: wingdent-glo
+    Description: Project name prefix for resource naming
+
+Resources:
+
+  # S3 bucket for static frontend hosting
+  FrontendS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-frontend'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      AccessControl: PublicRead
+
+  # RDS PostgreSQL database
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-db'
+      AllocatedStorage: 20
+      DBInstanceClass: db.t3.micro
+      Engine: postgres
+      EngineVersion: 15
+      MasterUsername: adminuser
+      MasterUserPassword: SuperSecretPassword123
+      BackupRetentionPeriod: 1
+      PubliclyAccessible: true
+      DBName: wingdentglo
+      MultiAZ: false
+
+  # Lambda execution role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaBasicExecution
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  # Example Lambda function (placeholder)
+  ExampleLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-example-fn'
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: nodejs18.x
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              return {
+                  statusCode: 200,
+                  body: JSON.stringify("Hello from Wingdent-Glo Lambda!"),
+              };
+          };
+
+  # API Gateway for Lambda
+  APIGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${ProjectName}-api'
+      Description: API for Wingdent-Glo PoC
+
+  # Cognito User Pool with email-based login and OTP
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${ProjectName}-user-pool'
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${ProjectName}-app-client'
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+Outputs:
+  S3Bucket:
+    Description: S3 Bucket for hosting frontend
+    Value: !Ref FrontendS3Bucket
+
+  RDSInstance:
+    Description: PostgreSQL RDS DB endpoint
+    Value: !GetAtt DBInstance.Endpoint.Address
+
+  LambdaFunction:
+    Description: Sample Lambda function
+    Value: !Ref ExampleLambdaFunction
+
+  APIGateway:
+    Description: API Gateway for Lambda
+    Value: !Ref APIGateway
+
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+
+  CognitoAppClientId:
+    Description: Cognito App Client ID
+    Value: !Ref CognitoUserPoolClient

@@ -1,0 +1,136 @@
+// frontend/src/App.tsx
+import React, { useState, useEffect } from 'react';
+import { useAuth } from './AuthContext';
+import AuthForm from './AuthForm'; // Import the AuthForm component
+import { PatientDashboard } from './PatientComponents';
+import { DoctorDashboard } from './DoctorComponents';
+import { AdminDashboard } from './AdminComponents';
+import { SuperAdminDashboard } from './SuperAdminComponents'; // Import SuperAdminDashboard
+import { LoadingSpinner, MessageDisplay } from './CommonComponents';
+import { AIAnalyzerPage } from './AIAnalyzerPage'; // Import the new AIAnalyzerPage
+
+const App: React.FC = () => {
+    const { user, loading, message, logout } = useAuth();
+    const [currentPage, setCurrentPage] = useState<string>('dashboard'); // Default page
+    const [pageData, setPageData] = useState<any>(null); // State to pass data to pages
+
+    // Function to navigate between pages within the dashboard
+    const navigate = (page: string, data?: any) => {
+        setCurrentPage(page);
+        setPageData(data);
+    };
+
+    // Determine the user's role and render the appropriate dashboard
+    const renderDashboard = () => {
+        if (!user || !user.profile) {
+            // This case should ideally be handled by AuthContext ensuring profile is loaded
+            // or by redirecting to login if user is null.
+            // If user exists but profile is momentarily null, a loading state might be better.
+            return <MessageDisplay message={{text:"User profile not loaded.",type:"error"}} />;
+        }
+
+        switch (currentPage) {
+            case 'dashboard': // This is the default dashboard view based on role
+                switch (user.profile.role) {
+                    case 'patient':
+                        return <PatientDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
+                    case 'doctor':
+                        return <DoctorDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
+                    case 'admin':
+                        return <AdminDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
+                    case 'superadmin':
+                        return <SuperAdminDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
+                    default:
+                        return <MessageDisplay message={{text:"Unknown user role." ,type:"error"}} />;
+                }
+            // Specific pages for Patient role
+            case 'bookService':
+            case 'myBookings':
+            case 'myAddresses':
+            case 'appointmentStatus':
+            case 'payment':
+            case 'feedback':
+            case 'helpFAQ':
+                return <PatientDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
+            // Specific pages for Doctor role
+            case 'myAppointments':
+            case 'pendingAppointments':
+            case 'manageAvailability':
+            case 'doctorProfile':
+            case 'patientFeedback':
+            case 'doctorReports':
+            case 'appointmentDetails':
+                return <DoctorDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
+            // Specific pages for Admin role
+            case 'userManagement':
+            case 'serviceManagement':
+            case 'offerManagement':
+            case 'appointmentOversight':
+                return <AdminDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
+            // Specific pages for SuperAdmin role
+            case 'financialOversight':
+            case 'feeConfiguration':
+                return <SuperAdminDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
+            case 'aiAnalyzerPage': // NEW: Route for AI Analyzer
+                return <AIAnalyzerPage navigate={navigate} />;
+            default:
+                return <MessageDisplay message={{text:"Page not found or invalid route.",type:"error"}} />;
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="d-flex justify-content-center align-items-center min-vh-100 bg-light">
+                <LoadingSpinner />
+            </div>
+        );
+    }
+
+    // If user is not logged in, show the AuthForm
+    if (!user) {
+        return <AuthForm />;
+    }
+
+    // If user is logged in, show the main application layout
+    return (
+        <div className="min-vh-100 bg-light">
+            {/* Navbar */}
+            <nav className="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+                <div className="container-fluid">
+                    <span className="navbar-brand mb-0 h1 text-white">Wingdent-Glo</span>
+                    <div className="d-flex align-items-center">
+                        <span className="navbar-text me-3 text-white">
+                            Logged in as: {user.email} ({user.profile?.role || 'N/A'})
+                        </span>
+                        {user.profile?.id && (
+                             <span className="navbar-text me-3 text-white-50 small">
+                                User ID: {user.profile.id}
+                            </span>
+                        )}
+                        {/* NEW: AI Analyzer Button */}
+                        <button
+                            onClick={() => navigate('aiAnalyzerPage')}
+                            className="btn btn-outline-info me-2" // Added margin-end for spacing
+                        >
+                            AI Analyzer
+                        </button>
+                        <button
+                            onClick={logout}
+                            className="btn btn-outline-light" // Changed to btn-outline-light for visibility
+                        >
+                            Logout
+                        </button>
+                    </div>
+                </div>
+            </nav>
+
+            {/* Main Content Area */}
+            <main className="container py-4">
+                <MessageDisplay message={message} />
+                {renderDashboard()}
+            </main>
+        </div>
+    );
+};
+
+export default App;
