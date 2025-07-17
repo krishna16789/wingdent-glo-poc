@@ -1,4 +1,3 @@
-// frontend/src/App.tsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import AuthForm from './AuthForm'; // Import the AuthForm component
@@ -93,24 +92,26 @@ const App: React.FC = () => {
 
     // If user is logged in, show the main application layout
     return (
-        <div className="min-vh-100 bg-light">
+        <div className="min-vh-100 bg-light d-flex flex-column">
             {/* Navbar */}
             <nav className="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
                 <div className="container-fluid">
                     <span className="navbar-brand mb-0 h1 text-white">Wingdent-Glo</span>
-                    <div className="d-flex align-items-center">
-                        <span className="navbar-text me-3 text-white">
+                    {/* Added flex-column on small screens, flex-row on medium and up */}
+                    <div className="d-flex flex-column flex-md-row align-items-md-center">
+                        {/* Adjusted margins for responsiveness */}
+                        <span className="navbar-text me-md-3 mb-2 mb-md-0 text-white">
                             Logged in as: {user.email} ({user.profile?.role || 'N/A'})
                         </span>
                         {user.profile?.id && (
-                             <span className="navbar-text me-3 text-white-50 small">
+                             <span className="navbar-text me-md-3 mb-2 mb-md-0 text-white-50 small">
                                 User ID: {user.profile.id}
                             </span>
                         )}
-                        {/* NEW: AI Analyzer Button */}
+                        {/* NEW: AI Analyzer Button - Adjusted margins for responsiveness */}
                         <button
                             onClick={() => navigate('aiAnalyzerPage')}
-                            className="btn btn-outline-info me-2" // Added margin-end for spacing
+                            className="btn btn-outline-info me-md-2 mb-2 mb-md-0" // Added margin-end for spacing
                         >
                             AI Analyzer
                         </button>
@@ -125,7 +126,7 @@ const App: React.FC = () => {
             </nav>
 
             {/* Main Content Area */}
-            <main className="container py-4">
+            <main className="container flex-grow-1 py-4">
                 <MessageDisplay message={message} />
                 {renderDashboard()}
             </main>
