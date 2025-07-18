@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
-import AuthForm from './AuthForm'; // Import the AuthForm component
+import AuthForm, { DentalLogo } from './AuthForm'; // Import the AuthForm component
 import { PatientDashboard } from './PatientComponents';
 import { DoctorDashboard } from './DoctorComponents';
 import { AdminDashboard } from './AdminComponents';
@@ -96,31 +96,49 @@ const App: React.FC = () => {
             {/* Navbar */}
             <nav className="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
                 <div className="container-fluid">
-                    <span className="navbar-brand mb-0 h1 text-white">Wingdent-Glo</span>
-                    {/* Added flex-column on small screens, flex-row on medium and up */}
-                    <div className="d-flex flex-column flex-md-row align-items-md-center">
-                        {/* Adjusted margins for responsiveness */}
-                        <span className="navbar-text me-md-3 mb-2 mb-md-0 text-white">
-                            Logged in as: {user.email} ({user.profile?.role || 'N/A'})
-                        </span>
-                        {user.profile?.id && (
-                             <span className="navbar-text me-md-3 mb-2 mb-md-0 text-white-50 small">
-                                User ID: {user.profile.id}
-                            </span>
-                        )}
-                        {/* NEW: AI Analyzer Button - Adjusted margins for responsiveness */}
-                        <button
-                            onClick={() => navigate('aiAnalyzerPage')}
-                            className="btn btn-outline-info me-md-2 mb-2 mb-md-0" // Added margin-end for spacing
-                        >
-                            AI Analyzer
+                    {/* Brand and Toggler for Mobile */}
+                    <div className="d-flex w-100 justify-content-between justify-content-lg-start align-items-center">
+                        <a className="navbar-brand d-flex align-items-center" href="#" onClick={() => navigate('dashboard')}> {/* mx-auto for centering on mobile, mx-lg-0 for left align on large */}
+                            <div className="me-2" style={{backgroundColor:"white", width: "40px", height:"40px"}}><DentalLogo/></div> {/* Smaller logo for navbar */}
+                            <span className="h4 mb-0 text-white">Wingdent-Glo</span> {/* h4 for slightly smaller text */}
+                        </a>
+                        <button className="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                            <span className="navbar-toggler-icon"></span>
                         </button>
-                        <button
-                            onClick={logout}
-                            className="btn btn-outline-light" // Changed to btn-outline-light for visibility
-                        >
-                            Logout
-                        </button>
+                    </div>
+
+                    {/* Collapsible content for navigation items */}
+                    <div className="collapse navbar-collapse" id="navbarNav">
+                        <ul className="navbar-nav ms-auto mb-2 mb-lg-0 align-items-lg-center">
+                            <li className="nav-item">
+                                <span className="navbar-text me-lg-3 text-white">
+                                    {user.email} ({user.profile?.role || 'N/A'})
+                                </span>
+                            </li>
+                            {user.profile?.id && (
+                                <li className="nav-item">
+                                    <span className="navbar-text me-lg-3 text-white-50 small">
+                                        User ID: {user.profile.id}
+                                    </span>
+                                </li>
+                            )}
+                            <li className="nav-item">
+                                <button
+                                    onClick={() => navigate('aiAnalyzerPage')}
+                                    className="btn btn-outline-info w-100 w-lg-auto me-lg-2 mt-2 mt-lg-0"
+                                >
+                                    AI Analyzer
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button
+                                    onClick={logout}
+                                    className="btn btn-outline-light w-100 w-lg-auto mt-2 mt-lg-0"
+                                >
+                                    Logout
+                                </button>
+                            </li>
+                        </ul>
                     </div>
                 </div>
             </nav>
