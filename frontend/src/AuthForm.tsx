@@ -75,7 +75,7 @@ const AuthForm: React.FC = () => {
         <div className="d-flex justify-content-center align-items-center min-vh-100 bg-light p-3">
             <div className="card shadow-lg p-4 p-md-5 rounded-3" style={{ maxWidth: '450px', width: '100%' }}>
                 <div className="text-center mb-4">
-                    <DentalLogo />
+                    <img alt="wingdent-glo logo" src="wingdent-glo.png" width={1024} height={1024}/>
                     <h1 className="h3 fw-bold text-dark mb-1">Wingdent-Glo</h1>
                     <p className="text-muted">Your Smile, Our Priority. Seamless Dental Care.</p>
                 </div>

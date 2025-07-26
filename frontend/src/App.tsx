@@ -99,7 +99,8 @@ const App: React.FC = () => {
                     {/* Brand and Toggler for Mobile */}
                     <div className="d-flex w-100 justify-content-between justify-content-lg-start align-items-center">
                         <a className="navbar-brand d-flex align-items-center" href="#" onClick={() => navigate('dashboard')}> {/* mx-auto for centering on mobile, mx-lg-0 for left align on large */}
-                            <div className="me-2" style={{backgroundColor:"white", width: "40px", height:"40px"}}><DentalLogo/></div> {/* Smaller logo for navbar */}
+                            <div className="me-2" style={{backgroundColor:"white", width: "40px", height:"40px"}}>
+                            <img alt="wingdent-glo logo" src="wingdent-glo.png" width={1024} height={1024}/></div> {/* Smaller logo for navbar */}
                             <span className="h4 mb-0 text-white">Wingdent-Glo</span> {/* h4 for slightly smaller text */}
                         </a>
                         <button className="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">

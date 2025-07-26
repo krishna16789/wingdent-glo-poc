@@ -79,16 +79,15 @@ export const AIAnalyzerPage: React.FC<AIAnalyzerPageProps> = ({ navigate }) => {
                 })
             );
 
-            const prompt = `Analyze the provided dental/mouth images for any potential dental problems, issues, or areas of concern. Provide a concise summary of findings, using clear headings or bullet points if applicable.
-            
-            IMPORTANT DISCLAIMER: This analysis is for informational purposes only and is not a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of a qualified healthcare provider for any questions regarding your medical condition.`;
+            const prompt = `Analyze the provided dental/mouth images for any potential dental problems, issues, or areas of concern. Provide a detailed analysis of findings, using as many clear headings or bullet points if applicable.
+            `;
 
             let chatHistory = [];
             chatHistory.push({ role: "user", parts: [{ text: prompt }, ...imageParts] });
 
             const payload = { contents: chatHistory };
             const apiKey = "AIzaSyCwz1oMiUAGoZZtVoxzg2RZ-_LJVXR70o0"; // Canvas will inject API key at runtime
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
