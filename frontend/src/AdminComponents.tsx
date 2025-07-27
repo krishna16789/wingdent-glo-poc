@@ -1,16 +1,17 @@
 // frontend/src/AdminComponents.tsx
 import React, { useState, useEffect } from 'react';
-import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp, collectionGroup, Timestamp } from 'firebase/firestore';
+import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp, collectionGroup, Timestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { LoadingSpinner, MessageDisplay, CustomModal } from './CommonComponents';
-import { Service, Offer, Appointment, Payment, FeeConfiguration, Address, Prescription, HealthRecord, Consultation, UserProfile } from './types'; // Import new types
+import { Service, Offer, Appointment, Payment, FeeConfiguration, Address, Prescription, HealthRecord, Consultation, UserProfile, Teleconsultation } from './types'; // Import Teleconsultation type
 import { DashboardProps } from './PatientComponents'; // Import DashboardProps for consistency
 
 // Import the new PrescriptionViewerPage
 import { PrescriptionViewerPage } from './PrescriptionViewerPage'; // NEW IMPORT
+import { TeleconsultationCallPage } from './TeleconsultationCallPage';
 
 // User Management Page (Admin/Superadmin)
-export const UserManagementPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+export const UserManagementPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
     const { user, message, db, appId, setMessage } = useAuth();
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
@@ -290,7 +291,7 @@ export const UserManagementPage: React.FC<{ navigate: (page: string | number, da
 };
 
 // Service Management Page (Admin/Superadmin)
-export const ServiceManagementPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+export const ServiceManagementPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
     const { user, message, db, appId, setMessage } = useAuth();
     const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(true);
@@ -308,7 +309,7 @@ export const ServiceManagementPage: React.FC<{ navigate: (page: string | number,
             return;
         }
         try {
-            const servicesCollectionRef = collection(db, `artifacts/${appId}/services`); // CORRECTED PATH
+            const servicesCollectionRef = collection(db, `artifacts/${appId}/services`);
             const snapshot = await getDocs(servicesCollectionRef);
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Service[];
             setServices(data);
@@ -356,14 +357,14 @@ export const ServiceManagementPage: React.FC<{ navigate: (page: string | number,
         setError(null);
         try {
             if (currentService) {
-                const serviceDocRef = doc(db, `artifacts/${appId}/services`, currentService.id); // CORRECTED PATH
+                const serviceDocRef = doc(db, `artifacts/${appId}/services`, currentService.id);
                 await updateDoc(serviceDocRef, {
                     ...serviceFormData,
                     updated_at: serverTimestamp(),
                 });
                 setMessage({ text: 'Service updated successfully!', type: 'success' });
             } else {
-                const servicesCollectionRef = collection(db, `artifacts/${appId}/services`); // CORRECTED PATH
+                const servicesCollectionRef = collection(db, `artifacts/${appId}/services`);
                 await addDoc(servicesCollectionRef, {
                     ...serviceFormData,
                     created_at: serverTimestamp(),
@@ -390,7 +391,7 @@ export const ServiceManagementPage: React.FC<{ navigate: (page: string | number,
         setLoading(true);
         setError(null);
         try {
-            const serviceDocRef = doc(db, `artifacts/${appId}/services`, serviceId); // CORRECTED PATH
+            const serviceDocRef = doc(db, `artifacts/${appId}/services`, serviceId);
             await deleteDoc(serviceDocRef);
             setMessage({ text: 'Service deleted successfully!', type: 'success' });
             fetchServices();
@@ -497,7 +498,7 @@ export const ServiceManagementPage: React.FC<{ navigate: (page: string | number,
 };
 
 // Offer Management Page (Admin/Superadmin)
-export const OfferManagementPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+export const OfferManagementPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
     const { user, message, db, appId, setMessage } = useAuth();
     const [offers, setOffers] = useState<Offer[]>([]);
     const [loading, setLoading] = useState(true);
@@ -515,7 +516,7 @@ export const OfferManagementPage: React.FC<{ navigate: (page: string | number, d
             return;
         }
         try {
-            const offersCollectionRef = collection(db, `artifacts/${appId}/offers`); // CORRECTED PATH
+            const offersCollectionRef = collection(db, `artifacts/${appId}/offers`);
             const snapshot = await getDocs(offersCollectionRef);
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Offer[];
             setOffers(data);
@@ -560,14 +561,14 @@ export const OfferManagementPage: React.FC<{ navigate: (page: string | number, d
         setError(null);
         try {
             if (currentOffer) {
-                const offerDocRef = doc(db, `artifacts/${appId}/offers`, currentOffer.id); // CORRECTED PATH
+                const offerDocRef = doc(db, `artifacts/${appId}/offers`, currentOffer.id);
                 await updateDoc(offerDocRef, {
                     ...offerFormData,
                     updated_at: serverTimestamp(),
                 });
                 setMessage({ text: 'Offer updated successfully!', type: 'success' });
             } else {
-                const offersCollectionRef = collection(db, `artifacts/${appId}/offers`); // CORRECTED PATH
+                const offersCollectionRef = collection(db, `artifacts/${appId}/offers`);
                 await addDoc(offersCollectionRef, {
                     ...offerFormData,
                     created_at: serverTimestamp(),
@@ -594,7 +595,7 @@ export const OfferManagementPage: React.FC<{ navigate: (page: string | number, d
         setLoading(true);
         setError(null);
         try {
-            const offerDocRef = doc(db, `artifacts/${appId}/offers`, offerId); // CORRECTED PATH
+            const offerDocRef = doc(db, `artifacts/${appId}/offers`, offerId);
             await deleteDoc(offerDocRef);
             setMessage({ text: 'Offer deleted successfully!', type: 'success' });
             fetchOffers();
@@ -697,7 +698,7 @@ export const OfferManagementPage: React.FC<{ navigate: (page: string | number, d
 };
 
 // Appointment Oversight Page (Admin/Superadmin)
-export const AppointmentOversightPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+export const AppointmentOversightPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
     const { user, message, db, appId, setMessage } = useAuth();
     const [appointments, setAppointments] = useState<Appointment[]>([]);
     const [loading, setLoading] = useState(true);
@@ -761,7 +762,7 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string | numb
         try {
             // Pre-fetch all services once
             const servicesMap = new Map<string, Service>();
-            const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // CORRECTED PATH
+            const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`));
             servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
 
             // Pre-fetch all users (patients and doctors) once
@@ -881,12 +882,44 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string | numb
         setError(null);
         try {
             const appointmentDocRef = doc(db, `artifacts/${appId}/users/${showAssignDoctorModal.patient_id}/appointments`, showAssignDoctorModal.id);
-            await updateDoc(appointmentDocRef, {
+            const batch = writeBatch(db); // Use a batch for multiple updates
+
+            // Update the main appointment document
+            batch.update(appointmentDocRef, {
                 doctor_id: selectedDoctorId,
                 status: 'assigned',
                 assigned_at: serverTimestamp(),
                 updated_at: serverTimestamp(),
             });
+
+            // NEW: If it's a teleconsultation, generate Jitsi link and create Teleconsultation document
+            if (showAssignDoctorModal.appointment_type === 'teleconsultation') {
+                const jitsiRoomName = `WingdentGlo_${appId}_${showAssignDoctorModal.id}_${Date.now()}`;
+                const meetingLink = `https://meet.jit.si/${jitsiRoomName}`;
+
+                const teleconsultationsCollectionRef = collection(db, `artifacts/${appId}/users/${showAssignDoctorModal.patient_id}/appointments/${showAssignDoctorModal.id}/teleconsultations`);
+                const newTeleconsultationDocRef = doc(teleconsultationsCollectionRef); // Auto-generate ID
+                const teleconsultationId = newTeleconsultationDocRef.id;
+
+                batch.set(newTeleconsultationDocRef, {
+                    appointment_id: showAssignDoctorModal.id,
+                    patient_id: showAssignDoctorModal.patient_id,
+                    doctor_id: selectedDoctorId,
+                    meeting_link: meetingLink,
+                    status: 'scheduled',
+                    platform_used: 'Jitsi',
+                    created_at: serverTimestamp(),
+                    updated_at: serverTimestamp(),
+                } as Teleconsultation); // Cast to Teleconsultation type
+
+                // Update the main appointment document with teleconsultation_id
+                batch.update(appointmentDocRef, {
+                    teleconsultation_id: teleconsultationId, // Store the reference to the subcollection document
+                });
+            }
+
+            await batch.commit(); // Commit all batch operations
+
             setShowAssignDoctorModal(null);
             setMessage({ text: 'Doctor assigned successfully!', type: 'success' });
             fetchAppointments();
@@ -1039,6 +1072,7 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string | numb
                                 <tr>
                                     <th>Patient</th>
                                     <th>Service</th>
+                                    <th>Type</th> {/* NEW COLUMN */}
                                     <th>Date</th>
                                     <th>Time</th>
                                     <th>Address</th>
@@ -1053,16 +1087,21 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string | numb
                                     <tr key={appt.id}>
                                         <td>{appt.patientName}</td>
                                         <td>{appt.serviceName}</td>
+                                        {/* MODIFIED: Safely display appointment type */}
+                                        <td>{appt.appointment_type === 'teleconsultation' ? 'Teleconsultation' : 'In-person'}</td>
                                         <td>{appt.requested_date}</td>
                                         <td>{appt.requested_time_slot}</td>
                                         <td>
-                                            {appt.addressDetails ? (
-                                                <>
-                                                    {appt.addressDetails.address_line_1}<br />
-                                                    {appt.addressDetails.address_line_2 && `${appt.addressDetails.address_line_2}<br />`}
-                                                    {appt.addressDetails.city}, {appt.addressDetails.state} {appt.addressDetails.zip_code}
-                                                </>
-                                            ) : 'N/A'}
+                                            {/* MODIFIED: Display address only for in-person appointments */}
+                                            {appt.appointment_type === 'in_person' ? (
+                                                appt.addressDetails ? (
+                                                    <>
+                                                        {appt.addressDetails.address_line_1}<br />
+                                                        {appt.addressDetails.address_line_2 && `${appt.addressDetails.address_line_2}<br />`}
+                                                        {appt.addressDetails.city}, {appt.addressDetails.state} {appt.addressDetails.zip_code}
+                                                    </>
+                                                ) : 'N/A'
+                                            ) : 'N/A (Teleconsultation)'}
                                         </td>
                                         <td>{appt.doctorName}</td>
                                         <td><span className={`badge ${getStatusBadgeClass(appt.status)}`}>{appt.status.replace(/_/g, ' ').toUpperCase()}</span></td>
@@ -1073,6 +1112,16 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string | numb
                                             )}
                                             {appt.status === 'completed' && appt.payment_status === 'pending' && (
                                                 <button className="btn btn-sm btn-success ms-2" onClick={() => handleRecordPaymentClick(appt)}>Record Payment</button>
+                                            )}
+                                            {/* Admin can view teleconsultation link if it exists */}
+                                            {appt.appointment_type === 'teleconsultation' && (
+                                                <button
+                                                    className="btn btn-sm btn-outline-info ms-2"
+                                                    // Admin can generate on the fly for viewing, as the actual link is in subcollection
+                                                    onClick={() => navigate('teleconsultationCall', { meetingLink: `https://meet.jit.si/WingdentGlo_${appId}_${appt.id}` })}
+                                                >
+                                                    View Call Link
+                                                </button>
                                             )}
                                         </td>
                                     </tr>
@@ -1088,14 +1137,19 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string | numb
                     title={`Assign Doctor to ${showAssignDoctorModal.serviceName} for ${showAssignDoctorModal.patientName}`}
                     message={
                         <>
-                            <p><strong>Appointment Address:</strong></p>
-                            {showAssignDoctorModal.addressDetails ? (
+                            <p><strong>Appointment Type:</strong> {showAssignDoctorModal.appointment_type === 'in_person' ? 'In-person' : 'Teleconsultation'}</p>
+                            {showAssignDoctorModal.appointment_type === 'in_person' && (
+                                <p><strong>Appointment Address:</strong></p>
+                            )}
+                            {showAssignDoctorModal.appointment_type === 'in_person' && showAssignDoctorModal.addressDetails ? (
                                 <p>
                                     {showAssignDoctorModal.addressDetails.address_line_1}<br />
                                     {showAssignDoctorModal.addressDetails.address_line_2 && `${showAssignDoctorModal.addressDetails.address_line_2}<br />`}
                                     {showAssignDoctorModal.addressDetails.city}, {showAssignDoctorModal.addressDetails.state} {showAssignDoctorModal.addressDetails.zip_code}
                                 </p>
-                            ) : <p>Address details not available.</p>}
+                            ) : (
+                                showAssignDoctorModal.appointment_type === 'in_person' && <p>Address details not available.</p>
+                            )}
                             <p>Select a doctor to assign to this appointment.</p>
                         </>
                     }
@@ -1188,7 +1242,7 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string | numb
 };
 
 // NEW: AdminPatientOversightPage - Lists all patients for admin to view their records
-export const AdminPatientOversightPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+export const AdminPatientOversightPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
     const { user, db, appId, setMessage } = useAuth();
     const [patients, setPatients] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
@@ -1221,7 +1275,8 @@ export const AdminPatientOversightPage: React.FC<{ navigate: (page: string | num
                 });
                 setPatients(fetchedPatients);
                 setFilteredPatients(fetchedPatients);
-            } catch (err: any) {
+            }
+            catch (err: any) {
                 console.error("Error fetching patients for admin oversight:", err);
                 setError(err.message);
                 setMessage({ text: `Error fetching patients: ${err.message}`, type: "error" });
@@ -1300,7 +1355,7 @@ export const AdminPatientOversightPage: React.FC<{ navigate: (page: string | num
 };
 
 // NEW: AdminPatientHealthDataViewPage - Displays a specific patient's health data for admin
-export const AdminPatientHealthDataViewPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string }> = ({ navigate, patientId, patientName }) => { // MODIFIED: navigate type
+export const AdminPatientHealthDataViewPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string }> = ({ navigate, patientId, patientName }) => {
     const { user, db, appId, setMessage } = useAuth();
     const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
     const [healthRecords, setHealthRecords] = useState<HealthRecord[]>([]);
@@ -1331,7 +1386,7 @@ export const AdminPatientHealthDataViewPage: React.FC<{ navigate: (page: string 
                     }
                 });
 
-                const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // CORRECTED PATH
+                const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`));
                 servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
 
 
@@ -1538,7 +1593,7 @@ export const AdminPatientHealthDataViewPage: React.FC<{ navigate: (page: string 
 
 // AdminDashboard Component
 export const AdminDashboard: React.FC<DashboardProps> = ({ navigate, currentPage, pageData }) => {
-    const { user, logout, message, db, appId } = useAuth(); // Added db, appId
+    const { user, logout, message, db, appId } = useAuth();
 
     const [pendingAppointmentsCount, setPendingAppointmentsCount] = useState<number>(0);
     const [activeDoctorsCount, setActiveDoctorsCount] = useState<number>(0);
@@ -1688,8 +1743,10 @@ export const AdminDashboard: React.FC<DashboardProps> = ({ navigate, currentPage
                 return <AdminPatientOversightPage navigate={navigate} />;
             case 'adminPatientHealthDataView':
                 return <AdminPatientHealthDataViewPage navigate={navigate} patientId={pageData.patientId} patientName={pageData.patientName} />;
-            case 'prescriptionViewer': // NEW CASE for Prescription Viewer
+            case 'prescriptionViewer':
                 return <PrescriptionViewerPage navigate={navigate} patientId={pageData.patientId} prescriptionId={pageData.prescriptionId} />;
+            case 'teleconsultationCall': // NEW CASE for Admin to view/test call link
+                return <TeleconsultationCallPage navigate={navigate} meetingLink={pageData.meetingLink} />;
             default:
                 return <MessageDisplay message={{ text: "Page not found.", type: "error" }} />;
         }

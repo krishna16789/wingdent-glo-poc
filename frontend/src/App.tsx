@@ -53,6 +53,7 @@ const App: React.FC = () => {
             case 'prescriptionViewer':
             case 'payment':
             case 'feedback':
+            case 'teleconsultationCall':
             case 'helpFAQ':
                 return <PatientDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
             // Specific pages for Doctor role
@@ -67,6 +68,7 @@ const App: React.FC = () => {
             case 'managePatientRecords':
             case 'addPrescription':
             case 'addHealthRecord':
+            case 'teleconsultationCall':
             case 'addConsultation':
                 return <DoctorDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
             // Specific pages for Admin role
@@ -75,6 +77,7 @@ const App: React.FC = () => {
             case 'offerManagement':
             case 'adminPatientOversight':
             case 'adminPatientHealthDataView':
+            case 'teleconsultationCall':
             case 'appointmentOversight':
                 return <AdminDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
             // Specific pages for SuperAdmin role

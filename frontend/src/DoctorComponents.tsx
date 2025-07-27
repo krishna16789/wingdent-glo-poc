@@ -1,18 +1,29 @@
 // frontend/src/DoctorComponents.tsx
 import React, { useState, useEffect } from 'react';
 import { collection, doc, getDocs, getDoc, updateDoc, query, where, serverTimestamp, Timestamp, writeBatch, setDoc, collectionGroup, orderBy, addDoc } from 'firebase/firestore';
-import { useAuth } from './AuthContext'; // UserProfile is imported from types now, but useAuth is needed for user context
+import { useAuth } from './AuthContext';
 import { LoadingSpinner, MessageDisplay, CustomModal } from './CommonComponents';
-import { Appointment, Service, Address, Feedback, Prescription, HealthRecord, Consultation, MedicationItem, UserProfile } from './types'; // Import Prescription, HealthRecord, Consultation
+import { Appointment, Service, Address, Feedback, Prescription, HealthRecord, Consultation, MedicationItem, UserProfile, Teleconsultation } from './types'; // Import Teleconsultation
 import { DashboardProps } from './PatientComponents'; // Import DashboardProps for consistency
 
 // Import the new PrescriptionViewerPage
-import { PrescriptionViewerPage } from './PrescriptionViewerPage'; // NEW IMPORT
+import { PrescriptionViewerPage } from './PrescriptionViewerPage';
+
+// Import the TeleconsultationCallPage (if doctors also navigate to it directly, though usually they'll open in new tab)
+import { TeleconsultationCallPage } from './TeleconsultationCallPage'; // NEW IMPORT
 
 // Extend the Feedback type for local use in this component
 interface EnrichedFeedback extends Feedback {
     patientName?: string;
     serviceName?: string;
+}
+
+// Extend the Appointment type for local use in this component to include enriched data and teleconsultation link
+interface EnrichedDoctorAppointment extends Appointment {
+    patientName?: string;
+    serviceName?: string;
+    addressDetails?: Address;
+    teleconsultationLink?: string; // Add the optional teleconsultationLink
 }
 
 // Helper function to get status badge class
@@ -34,7 +45,7 @@ const getStatusBadgeClass = (status: Appointment['status']) => {
 
 // Doctor Dashboard
 export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPage, pageData }) => {
-    const { user, logout, db, appId, message } = useAuth(); // Added message from useAuth
+    const { user, logout, db, appId, message } = useAuth();
     const [assignedAppointmentsCount, setAssignedAppointmentsCount] = useState<number>(0);
     const [pendingAppointmentsCount, setPendingAppointmentsCount] = useState<number>(0);
     const [loadingDashboard, setLoadingDashboard] = useState(true);
@@ -51,7 +62,6 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
             }
             try {
                 // Fetch assigned appointments using collectionGroup
-                // Requires composite index: appointments (doctor_id ASC, status ASC)
                 const qAssigned = query(
                     collectionGroup(db, 'appointments'),
                     where('doctor_id', '==', user.uid),
@@ -61,24 +71,22 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
                 let assignedCount = 0;
                 assignedSnapshot.docs.forEach(docSnap => {
                     const pathSegments = docSnap.ref.path.split('/');
-                    if (pathSegments[1] === appId) {
+                    if (pathSegments[1] === appId) { // Ensure it belongs to this app instance
                         assignedCount++;
                     }
                 });
                 setAssignedAppointmentsCount(assignedCount);
 
                 // Fetch pending assignments (appointments not yet assigned to any doctor)
-                // Requires composite index: appointments (status ASC, doctor_id ASC)
                 const qPending = query(
                     collectionGroup(db, 'appointments'),
-                    where('status', '==', 'pending_assignment'),
-                    where('doctor_id', '==', null) // Appointments with no doctor assigned
+                    where('status', '==', 'pending_assignment')
                 );
                 const pendingSnapshot = await getDocs(qPending);
                 let pendingCount = 0;
                 pendingSnapshot.docs.forEach(docSnap => {
                     const pathSegments = docSnap.ref.path.split('/');
-                    if (pathSegments[1] === appId) {
+                    if (pathSegments[1] === appId) { // Ensure it belongs to this app instance
                         pendingCount++;
                     }
                 });
@@ -117,7 +125,7 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
                     <div className="container py-4">
                         <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
                             <h2 className="h3 fw-bold text-info mb-4 text-center">Doctor Dashboard</h2>
-                            <MessageDisplay message={message} /> {/* Display messages from AuthContext */}
+                            <MessageDisplay message={message} />
 
                             <div className="text-center mb-4">
                                 <img
@@ -162,7 +170,6 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
                                             <h5 className="card-title fw-bold text-info">Patient Data & Records</h5>
                                             <div className="d-grid gap-2 mt-3">
                                                 <button className="btn btn-outline-info" onClick={() => navigate('managePatientRecords')}>Manage Patient Records</button>
-                                                {/* <button className="btn btn-outline-info" onClick={() => navigate('addConsultationPrescription')}>Add Consultation/Prescription</button> */}
                                             </div>
                                         </div>
                                     </div>
@@ -210,7 +217,6 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
                 return <DoctorReportsPage navigate={navigate} />;
             case 'appointmentDetails':
                 return <DoctorAppointmentDetailsPage navigate={navigate} appointment={pageData?.appointment} />;
-            // NEW CASES FOR DOCTOR DASHBOARD
             case 'managePatientRecords':
                 return <ManagePatientRecordsPage navigate={navigate} />;
             case 'patientHealthDataView':
@@ -221,8 +227,10 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
                 return <AddHealthRecordPage navigate={navigate} patientId={pageData.patientId} patientName={pageData.patientName} appointmentId={pageData.appointmentId} />;
             case 'addConsultation':
                 return <AddConsultationPage navigate={navigate} patientId={pageData.patientId} patientName={pageData.patientName} appointmentId={pageData.appointmentId} />;
-            case 'prescriptionViewer': // NEW CASE for Prescription Viewer
+            case 'prescriptionViewer':
                 return <PrescriptionViewerPage navigate={navigate} patientId={pageData.patientId} prescriptionId={pageData.prescriptionId} />;
+            case 'teleconsultationCall': // NEW CASE: Doctor can also navigate to call page if needed
+                return <TeleconsultationCallPage navigate={navigate} meetingLink={pageData.meetingLink} />;
             default:
                 return <MessageDisplay message={{ text: "Page not found.", type: "error" }} />;
         }
@@ -236,12 +244,12 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
 };
 
 // My Appointments Page (Doctor)
-export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
-    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
-    const [appointments, setAppointments] = useState<Appointment[]>([]);
+export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
+    const { user, db, appId, setMessage } = useAuth();
+    const [appointments, setAppointments] = useState<EnrichedDoctorAppointment[]>([]); // MODIFIED: Use EnrichedDoctorAppointment
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [filterStatus, setFilterStatus] = useState<string>('upcoming'); // 'upcoming', 'completed', 'cancelled'
+    const [filterStatus, setFilterStatus] = useState<string>('upcoming');
 
     const fetchMyAppointments = async () => {
         setLoading(true);
@@ -252,8 +260,6 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, da
             return;
         }
         try {
-            // Use collectionGroup to query all 'appointments' subcollections
-            // Requires composite index: appointments (doctor_id ASC, status ASC)
             let q = query(collectionGroup(db, 'appointments'), where('doctor_id', '==', user.uid));
 
             if (filterStatus === 'upcoming') {
@@ -265,7 +271,7 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, da
             }
 
             const snapshot = await getDocs(q);
-            let fetchedAppointments: Appointment[] = [];
+            let fetchedAppointments: EnrichedDoctorAppointment[] = []; // MODIFIED: Use EnrichedDoctorAppointment
 
             // Pre-fetch all patients and services
             const patientsMap = new Map<string, UserProfile>();
@@ -275,50 +281,56 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, da
             allUsersSnapshot.docs.forEach(docSnap => {
                 const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
                 const pathSegments = docSnap.ref.path.split('/');
-                if (pathSegments[1] === appId) { // Ensure it belongs to this app's structure
+                if (pathSegments[1] === appId) {
                     patientsMap.set(docSnap.id, profileData);
                 }
             });
 
-            const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // CORRECTED PATH
+            const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`));
             servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
 
 
             for (const docSnap of snapshot.docs) {
                 const apptData = docSnap.data() as Appointment;
-                // Ensure the appointment belongs to the current app instance
                 const pathSegments = docSnap.ref.path.split('/');
                 if (pathSegments[1] !== appId) {
-                    continue; // Skip if not for this app instance
+                    continue;
                 }
 
                 let serviceName = servicesMap.get(apptData.service_id)?.name || 'Unknown Service';
                 let patientName = patientsMap.get(apptData.patient_id)?.full_name || patientsMap.get(apptData.patient_id)?.email || 'Unknown Patient';
                 let addressDetails: Address | undefined;
-
-                // Fetch address details (from patient's address collection)
-                if (apptData.address_id) {
+                let teleconsultationLink: string | undefined; // NEW: To store Jitsi link
+                // Fetch address details (from patient's address collection) for in-person
+                if ((apptData.appointment_type === 'in_person' || !apptData.appointment_type) && apptData.address_id) {
                     const patientAddressesCollectionRef = collection(db, `artifacts/${appId}/users/${apptData.patient_id}/addresses`);
                     const addressDocRef = doc(patientAddressesCollectionRef, apptData.address_id);
                     const addressSnap = await getDoc(addressDocRef);
                     if (addressSnap.exists()) {
                         addressDetails = addressSnap.data() as Address;
                     }
+                } else if (apptData.appointment_type === 'teleconsultation' && apptData.teleconsultation_id) {
+                    // NEW: Fetch teleconsultation link from subcollection
+                    const teleconsultationDocRef = doc(db, `artifacts/${appId}/users/${apptData.patient_id}/appointments/${docSnap.id}/teleconsultations/${apptData.teleconsultation_id}`);
+                    const teleconsultationSnap = await getDoc(teleconsultationDocRef);
+                    if (teleconsultationSnap.exists()) {
+                        teleconsultationLink = (teleconsultationSnap.data() as Teleconsultation).meeting_link;
+                    }
                 }
-
                 fetchedAppointments.push({
                     ...apptData,
                     id: docSnap.id,
                     serviceName,
                     patientName,
                     addressDetails,
+                    teleconsultationLink, // Add the link
                 });
             }
             setAppointments(fetchedAppointments);
         } catch (err: any) {
             console.error("Error fetching my appointments:", err);
             setError(err.message);
-            setMessage({ text: `Error fetching appointments: ${err.message}`, type: "error" }); // Use setMessage
+            setMessage({ text: `Error fetching appointments: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -329,6 +341,23 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, da
             fetchMyAppointments();
         }
     }, [user, db, appId, filterStatus]);
+
+    const handleStartCall = (meetingLink: string) => {
+        window.open(meetingLink, '_blank');
+    };
+
+    const isStartCallActive = (appointment: EnrichedDoctorAppointment) => {
+        if (appointment.appointment_type === 'teleconsultation' && appointment.teleconsultationLink && appointment.status === 'confirmed') {
+            const startTime = appointment.requested_time_slot.split(' - ')[0]; // Get "HH:MM AM/PM"
+            const apptDateTime = new Date(`${appointment.requested_date} ${startTime}`);
+            const now = new Date();
+            // Allow starting 15 minutes before to 1 hour after scheduled time
+            const fifteenMinutesBefore = new Date(apptDateTime.getTime() - 15 * 60 * 1000);
+            const oneHourAfter = new Date(apptDateTime.getTime() + 60 * 60 * 1000);
+            return now >= fifteenMinutesBefore && now <= oneHourAfter;
+        }
+        return false;
+    };
 
     if (loading) return (
         <div className="d-flex justify-content-center align-items-center min-vh-100">
@@ -370,6 +399,7 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, da
                                 <tr>
                                     <th>Service</th>
                                     <th>Patient</th>
+                                    <th>Type</th> {/* NEW COLUMN */}
                                     <th>Date</th>
                                     <th>Time</th>
                                     <th>Status</th>
@@ -381,11 +411,15 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, da
                                     <tr key={appt.id}>
                                         <td>{appt.serviceName}</td>
                                         <td>{appt.patientName}</td>
+                                        <td>{appt.appointment_type === 'in_person' ? 'In-person' : 'Teleconsultation'}</td> {/* Display type */}
                                         <td>{appt.requested_date}</td>
                                         <td>{appt.requested_time_slot}</td>
                                         <td><span className={`badge ${getStatusBadgeClass(appt.status)}`}>{appt.status.replace(/_/g, ' ').toUpperCase()}</span></td>
                                         <td>
                                             <button className="btn btn-sm btn-outline-primary me-2" onClick={() => navigate('appointmentDetails', { appointment: appt })}>View Details</button>
+                                            {appt.appointment_type === 'teleconsultation' && isStartCallActive(appt) && (
+                                                <button className="btn btn-sm btn-success ms-2" onClick={() => handleStartCall(appt.teleconsultationLink!)}>Start Call</button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}
@@ -402,8 +436,8 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, da
 };
 
 // Pending Appointments Page (Doctor)
-export const PendingAppointmentsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
-    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
+export const PendingAppointmentsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
+    const { user, db, appId, setMessage } = useAuth();
     const [pendingAppointments, setPendingAppointments] = useState<Appointment[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -417,12 +451,9 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string | numbe
             return;
         }
         try {
-            // Use collectionGroup to query all 'appointments' subcollections
-            // Requires composite index: appointments (status ASC, doctor_id ASC)
             const q = query(
                 collectionGroup(db, 'appointments'),
-                where('status', '==', 'pending_assignment'),
-                where('doctor_id', '==', null) // Filter for appointments not yet assigned to any doctor
+                where('status', '==', 'pending_assignment')
             );
             const snapshot = await getDocs(q);
             let fetchedAppointments: Appointment[] = [];
@@ -440,23 +471,21 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string | numbe
                 }
             });
 
-            const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // CORRECTED PATH
+            const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`));
             servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
 
 
             for (const docSnap of snapshot.docs) {
                 const apptData = docSnap.data() as Appointment;
-                // Ensure the appointment belongs to the current app instance
                 const pathSegments = docSnap.ref.path.split('/');
                 if (pathSegments[1] !== appId) {
-                    continue; // Skip if not for this app instance
+                    continue;
                 }
 
                 let serviceName = servicesMap.get(apptData.service_id)?.name || 'Unknown Service';
                 let patientName = patientsMap.get(apptData.patient_id)?.full_name || patientsMap.get(apptData.patient_id)?.email || 'Unknown Patient';
                 let addressDetails: Address | undefined;
 
-                // Fetch address details (from patient's address collection)
                 if (apptData.address_id) {
                     const patientAddressesCollectionRef = collection(db, `artifacts/${appId}/users/${apptData.patient_id}/addresses`);
                     const addressDocRef = doc(patientAddressesCollectionRef, apptData.address_id);
@@ -478,7 +507,7 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string | numbe
         } catch (err: any) {
             console.error("Error fetching pending appointments:", err);
             setError(err.message);
-            setMessage({ text: `Error fetching pending appointments: ${err.message}`, type: "error" }); // Use setMessage
+            setMessage({ text: `Error fetching pending appointments: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -494,26 +523,59 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string | numbe
         setLoading(true);
         setError(null);
         if (!db || !appId || !user?.uid) {
-            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" }); // Use setMessage
+            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" });
             setLoading(false);
             return;
         }
         try {
-            // Update the appointment document to assign it to the current doctor
-            // This update must happen on the patient's appointment document
             const appointmentDocRef = doc(db, `artifacts/${appId}/users/${appointment.patient_id}/appointments`, appointment.id);
-            await updateDoc(appointmentDocRef, {
-                doctor_id: user.uid,
-                status: 'assigned', // Change status to 'assigned'
-                assigned_at: serverTimestamp(),
-                updated_at: serverTimestamp(),
-            });
-            setMessage({ text: `Appointment for ${appointment.patientName} assigned to you.`, type: "success" }); // Use setMessage
+
+            // NEW: If it's a teleconsultation, generate Jitsi link and create Teleconsultation document
+            let teleconsultationId: string | undefined = undefined;
+            if (appointment.appointment_type === 'teleconsultation') {
+                const jitsiRoomName = `WingdentGlo_${appId}_${appointment.id}_${Date.now()}`;
+                const meetingLink = `https://meet.jit.si/${jitsiRoomName}`;
+
+                const teleconsultationsCollectionRef = collection(db, `artifacts/${appId}/users/${appointment.patient_id}/appointments/${appointment.id}/teleconsultations`);
+                const newTeleconsultationDocRef = doc(teleconsultationsCollectionRef); // Auto-generate ID
+                teleconsultationId = newTeleconsultationDocRef.id;
+
+                await setDoc(newTeleconsultationDocRef, {
+                    appointment_id: appointment.id,
+                    patient_id: appointment.patient_id,
+                    doctor_id: user.uid,
+                    meeting_link: meetingLink,
+                    status: 'scheduled',
+                    platform_used: 'Jitsi',
+                    created_at: serverTimestamp(),
+                    updated_at: serverTimestamp(),
+                } as Teleconsultation); // Cast to Teleconsultation type
+
+                // Update the main appointment document with teleconsultation_id
+                await updateDoc(appointmentDocRef, {
+                    doctor_id: user.uid,
+                    status: 'assigned',
+                    assigned_at: serverTimestamp(),
+                    updated_at: serverTimestamp(),
+                    teleconsultation_id: teleconsultationId
+                });
+
+            } else {
+                // For in-person appointments, just update the main appointment document
+                await updateDoc(appointmentDocRef, {
+                    doctor_id: user.uid,
+                    status: 'assigned',
+                    assigned_at: serverTimestamp(),
+                    updated_at: serverTimestamp(),
+                });
+            }
+
+            setMessage({ text: `Appointment for ${appointment.patientName} assigned to you.`, type: "success" });
             fetchPendingAppointments(); // Refresh the list
         } catch (err: any) {
             console.error("Error assigning appointment:", err);
             setError(err.message);
-            setMessage({ text: `Error assigning appointment: ${err.message}`, type: "error" }); // Use setMessage
+            setMessage({ text: `Error assigning appointment: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -545,6 +607,7 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string | numbe
                                 <tr>
                                     <th>Service</th>
                                     <th>Patient</th>
+                                    <th>Type</th> {/* NEW COLUMN */}
                                     <th>Date</th>
                                     <th>Time</th>
                                     <th>Address</th>
@@ -556,9 +619,10 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string | numbe
                                     <tr key={appt.id}>
                                         <td>{appt.serviceName}</td>
                                         <td>{appt.patientName}</td>
+                                        <td>{appt.appointment_type === 'in_person' ? 'In-person' : 'Teleconsultation'}</td> {/* Display type */}
                                         <td>{appt.requested_date}</td>
                                         <td>{appt.requested_time_slot}</td>
-                                        <td>{appt.addressDetails ? `${appt.addressDetails.address_line_1}, ${appt.addressDetails.city}` : 'N/A'}</td>
+                                        <td>{appt.addressDetails ? `${appt.addressDetails.address_line_1}, ${appt.addressDetails.city}` : 'N/A (Teleconsultation)'}</td> {/* Adjusted for teleconsultation */}
                                         <td>
                                             <button className="btn btn-sm btn-primary" onClick={() => handleAssignToMe(appt)} disabled={loading}>Assign to Me</button>
                                         </td>
@@ -577,51 +641,63 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string | numbe
 };
 
 // Manage Availability Page (Doctor)
-export const ManageAvailabilityPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
-    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
-    const [availability, setAvailability] = useState<any[]>([]); // State to hold doctor's availability
+export const ManageAvailabilityPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
+    const { user, db, appId, setMessage } = useAuth();
+    const [availability, setAvailability] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [newAvailability, setNewAvailability] = useState({ date: '', time_slots: [] as string[] });
     const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('');
 
-    const timeSlotsOptions = [
-        "09:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "11:00 AM - 12:00 PM",
-        "02:00 PM - 03:00 PM", "03:00 PM - 04:00 PM", "04:00 PM - 05:00 PM"
-    ];
+    // 24/7 Time Slots Generation
+    const timeSlotsOptions = [];
+    for (let i = 0; i < 24; i++) {
+        const startHour = i;
+        const endHour = (i + 1) % 24; // Handles the wrap-around for 23:00 - 00:00
 
-    const fetchAvailability = async () => {
-        setLoading(true);
-        setError(null);
-        if (!db || !appId || !user?.uid) {
-            setError("Firestore not initialized or user not logged in.");
-            setLoading(false);
-            return;
-        }
-        try {
-            // Availability is stored directly on the doctor's user profile as a JSON string
-            const userDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/users`, user.uid);
-            const docSnap = await getDoc(userDocRef);
-            if (docSnap.exists()) {
-                const profile = docSnap.data() as UserProfile;
-                if (profile.availability_schedule) {
-                    setAvailability(JSON.parse(profile.availability_schedule));
+        const formatHour = (hour: number) => {
+            const h = hour === 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+            const ampm = hour < 12 || hour === 24 ? 'AM' : 'PM';
+            return `${h.toString().padStart(2, '0')}:00 ${ampm}`;
+        };
+
+        const startTime = formatHour(startHour);
+        const endTime = formatHour(endHour);
+
+        timeSlotsOptions.push(`${startTime} - ${endTime}`);
+    }
+
+    useEffect(() => {
+        const fetchAvailability = async () => {
+            setLoading(true);
+            setError(null);
+            if (!db || !appId || !user?.uid) {
+                setError("Firestore not initialized or user not logged in.");
+                setLoading(false);
+                return;
+            }
+            try {
+                const userDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/users`, user.uid);
+                const docSnap = await getDoc(userDocRef);
+                if (docSnap.exists()) {
+                    const profile = docSnap.data() as UserProfile;
+                    if (profile.availability_schedule) {
+                        setAvailability(JSON.parse(profile.availability_schedule));
+                    } else {
+                        setAvailability([]);
+                    }
                 } else {
                     setAvailability([]);
                 }
-            } else {
-                setAvailability([]);
+            } catch (err: any) {
+                console.error("Error fetching availability:", err);
+                setError(err.message);
+                setMessage({ text: `Error fetching availability: ${err.message}`, type: "error" });
+            } finally {
+                setLoading(false);
             }
-        } catch (err: any) {
-            console.error("Error fetching availability:", err);
-            setError(err.message);
-            setMessage({ text: `Error fetching availability: ${err.message}`, type: "error" }); // Use setMessage
-        } finally {
-            setLoading(false);
-        }
-    };
+        };
 
-    useEffect(() => {
         if (user && db && appId) {
             fetchAvailability();
         }
@@ -631,36 +707,32 @@ export const ManageAvailabilityPage: React.FC<{ navigate: (page: string | number
         setLoading(true);
         setError(null);
         if (!db || !appId || !user?.uid || !newAvailability.date || newAvailability.time_slots.length === 0) {
-            setMessage({ text: "Please select a date and at least one time slot.", type: "error" }); // Use setMessage
+            setMessage({ text: "Please select a date and at least one time slot.", type: "error" });
             setLoading(false);
             return;
         }
         try {
             const userDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/users`, user.uid);
-            // Check if the date already exists
             const existingScheduleIndex = availability.findIndex(s => s.date === newAvailability.date);
             let updatedSchedules;
 
             if (existingScheduleIndex > -1) {
-                // Merge time slots for existing date
                 updatedSchedules = [...availability];
                 const existingSlots = new Set(updatedSchedules[existingScheduleIndex].time_slots);
                 newAvailability.time_slots.forEach(slot => existingSlots.add(slot));
                 updatedSchedules[existingScheduleIndex].time_slots = Array.from(existingSlots).sort();
             } else {
-                // Add new date schedule
                 updatedSchedules = [...availability, { ...newAvailability, time_slots: newAvailability.time_slots.sort() }];
             }
 
             await updateDoc(userDocRef, { availability_schedule: JSON.stringify(updatedSchedules), updated_at: serverTimestamp() });
-            setMessage({ text: 'Availability updated successfully!', type: 'success' }); // Use setMessage
+            setMessage({ text: 'Availability updated successfully!', type: 'success' });
             setNewAvailability({ date: '', time_slots: [] });
             setSelectedTimeSlot('');
-            fetchAvailability(); // Re-fetch to ensure UI is in sync
         } catch (err: any) {
             console.error("Error adding availability:", err);
             setError(err.message);
-            setMessage({ text: `Error adding availability: ${err.message}`, type: "error" }); // Use setMessage
+            setMessage({ text: `Error adding availability: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -670,7 +742,7 @@ export const ManageAvailabilityPage: React.FC<{ navigate: (page: string | number
         setLoading(true);
         setError(null);
         if (!db || !appId || !user?.uid) {
-            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" }); // Use setMessage
+            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" });
             setLoading(false);
             return;
         }
@@ -684,15 +756,14 @@ export const ManageAvailabilityPage: React.FC<{ navigate: (page: string | number
                     };
                 }
                 return schedule;
-            }).filter(schedule => schedule.time_slots.length > 0); // Remove dates with no slots left
+            }).filter(schedule => schedule.time_slots.length > 0);
 
             await updateDoc(userDocRef, { availability_schedule: JSON.stringify(updatedSchedules), updated_at: serverTimestamp() });
-            setMessage({ text: 'Time slot removed successfully!', type: 'success' }); // Use setMessage
-            fetchAvailability(); // Re-fetch to ensure UI is in sync
+            setMessage({ text: 'Time slot removed successfully!', type: 'success' });
         } catch (err: any) {
             console.error("Error removing time slot:", err);
             setError(err.message);
-            setMessage({ text: `Error removing time slot: ${err.message}`, type: "error" }); // Use setMessage
+            setMessage({ text: `Error removing time slot: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -708,7 +779,7 @@ export const ManageAvailabilityPage: React.FC<{ navigate: (page: string | number
                 ...prev,
                 time_slots: [...prev.time_slots, selectedTimeSlot].sort()
             }));
-            setSelectedTimeSlot(''); // Clear selected slot after adding
+            setSelectedTimeSlot('');
         }
     };
 
@@ -746,7 +817,7 @@ export const ManageAvailabilityPage: React.FC<{ navigate: (page: string | number
                             id="availabilityDate"
                             value={newAvailability.date}
                             onChange={(e) => setNewAvailability(prev => ({ ...prev, date: e.target.value }))}
-                            min={new Date().toISOString().split('T')[0]} // Cannot select past dates
+                            min={new Date().toISOString().split('T')[0]}
                             required
                         />
                     </div>
@@ -827,7 +898,7 @@ export const ManageAvailabilityPage: React.FC<{ navigate: (page: string | number
 };
 
 // Doctor Profile Page (Doctor)
-export const DoctorProfilePage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
+export const DoctorProfilePage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
     const { user, db, appId, setMessage } = useAuth();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
@@ -849,7 +920,7 @@ export const DoctorProfilePage: React.FC<{ navigate: (page: string | number, dat
                 const docSnap = await getDoc(userDocRef);
                 if (docSnap.exists()) {
                     setProfile(docSnap.data() as UserProfile);
-                    setFormData(docSnap.data() as UserProfile); // Initialize form data with current profile
+                    setFormData(docSnap.data() as UserProfile);
                 } else {
                     setError("Doctor profile not found.");
                 }
@@ -885,7 +956,7 @@ export const DoctorProfilePage: React.FC<{ navigate: (page: string | number, dat
                 ...formData,
                 updated_at: serverTimestamp(),
             });
-            setProfile((prev: any) => ({ ...prev!, ...formData })); // Update local state
+            setProfile((prev: any) => ({ ...prev!, ...formData }));
             setIsEditing(false);
             setMessage({ text: "Profile updated successfully!", type: "success" });
         } catch (err: any) {
@@ -996,9 +1067,9 @@ export const DoctorProfilePage: React.FC<{ navigate: (page: string | number, dat
 };
 
 // Patient Feedback Page (Doctor)
-export const PatientFeedbackPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
-    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
-    const [feedbacks, setFeedbacks] = useState<EnrichedFeedback[]>([]); // Use EnrichedFeedback
+export const PatientFeedbackPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
+    const { user, db, appId, setMessage } = useAuth();
+    const [feedbacks, setFeedbacks] = useState<EnrichedFeedback[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -1012,8 +1083,6 @@ export const PatientFeedbackPage: React.FC<{ navigate: (page: string | number, d
                 return;
             }
             try {
-                // Fetch all appointments assigned to this doctor that are completed
-                // Requires composite index: appointments (doctor_id ASC, status ASC)
                 const qAppointments = query(
                     collectionGroup(db, 'appointments'),
                     where('doctor_id', '==', user.uid),
@@ -1021,7 +1090,6 @@ export const PatientFeedbackPage: React.FC<{ navigate: (page: string | number, d
                 );
                 const appointmentsSnapshot = await getDocs(qAppointments);
 
-                // Pre-fetch all patients and services once
                 const patientsMap = new Map<string, UserProfile>();
                 const servicesMap = new Map<string, Service>();
 
@@ -1034,20 +1102,17 @@ export const PatientFeedbackPage: React.FC<{ navigate: (page: string | number, d
                     }
                 });
 
-                const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // CORRECTED PATH
+                const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`));
                 servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
 
 
                 const feedbackPromises = appointmentsSnapshot.docs.map(async (apptDoc) => {
                     const apptData = apptDoc.data() as Appointment;
-                    // Ensure the appointment belongs to the current app instance
                     const pathSegments = apptDoc.ref.path.split('/');
                     if (pathSegments[1] !== appId) {
-                        return null; // Skip if not for this app instance
+                        return null;
                     }
 
-                    // Fetch feedback for this specific appointment from the patient's feedback subcollection
-                    // Requires composite index: feedback (appointment_id ASC)
                     const feedbackQuery = query(
                         collection(db, `artifacts/${appId}/users/${apptData.patient_id}/feedback`),
                         where('appointment_id', '==', apptDoc.id)
@@ -1057,18 +1122,16 @@ export const PatientFeedbackPage: React.FC<{ navigate: (page: string | number, d
                     if (!feedbackSnap.empty) {
                         const feedbackData = feedbackSnap.docs[0].data() as Feedback;
 
-                        // Get patient name from pre-fetched map
                         const patientName = patientsMap.get(apptData.patient_id)?.full_name || patientsMap.get(apptData.patient_id)?.email || 'Unknown Patient';
 
-                        // Get service name from pre-fetched map
                         const serviceName = servicesMap.get(apptData.service_id)?.name || 'Unknown Service';
 
                         return {
                             ...feedbackData,
                             id: feedbackSnap.docs[0].id,
-                            patientName, // Add patientName to the feedback object
-                            serviceName, // Add serviceName to the feedback object
-                        } as EnrichedFeedback; // Cast to EnrichedFeedback
+                            patientName,
+                            serviceName,
+                        } as EnrichedFeedback;
                     }
                     return null;
                 });
@@ -1079,7 +1142,7 @@ export const PatientFeedbackPage: React.FC<{ navigate: (page: string | number, d
             } catch (err: any) {
                 console.error("Error fetching patient feedback:", err);
                 setError(err.message);
-                setMessage({ text: `Error fetching patient feedback: ${err.message}`, type: "error" }); // Use setMessage
+                setMessage({ text: `Error fetching patient feedback: ${err.message}`, type: "error" });
             } finally {
                 setLoading(false);
             }
@@ -1114,14 +1177,14 @@ export const PatientFeedbackPage: React.FC<{ navigate: (page: string | number, d
                         {feedbacks.map(feedback => (
                             <div key={feedback.id} className="list-group-item mb-3 rounded-3 shadow-sm">
                                 <div className="d-flex justify-content-between align-items-center mb-2">
-                                    <h5 className="mb-0">{feedback.patientName || 'Anonymous Patient'}</h5> {/* Use patientName */}
+                                    <h5 className="mb-0">{feedback.patientName || 'Anonymous Patient'}</h5>
                                     <div>
                                         {[...Array(5)].map((_, i) => (
                                             <span key={i} style={{ color: i < feedback.rating ? '#ffc107' : '#e4e5e9' }}>★</span>
                                         ))}
                                     </div>
                                 </div>
-                                <p className="text-muted small mb-1">Service: {feedback.serviceName || 'N/A'}</p> {/* Use serviceName */}
+                                <p className="text-muted small mb-1">Service: {feedback.serviceName || 'N/A'}</p>
                                 <p className="mb-0">{feedback.comments || 'No comments provided.'}</p>
                                 <small className="text-muted d-block mt-2">
                                     {feedback.created_at instanceof Timestamp
@@ -1141,7 +1204,7 @@ export const PatientFeedbackPage: React.FC<{ navigate: (page: string | number, d
 };
 
 // Doctor Reports Page (Doctor) - Placeholder
-export const DoctorReportsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
+export const DoctorReportsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
     const { user } = useAuth();
     if (!user || user.profile?.role !== 'doctor') {
         return <MessageDisplay message={{ text: "Access Denied. You must be a Doctor to view this page.", type: "error" }} />;
@@ -1161,14 +1224,15 @@ export const DoctorReportsPage: React.FC<{ navigate: (page: string | number, dat
 };
 
 // Doctor Appointment Details Page (Doctor)
-export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | number, data?: any) => void; appointment?: Appointment }> = ({ navigate, appointment: initialAppointment }) => { // Updated navigate type
+export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | number, data?: any) => void; appointment?: Appointment }> = ({ navigate, appointment: initialAppointment }) => {
     const { user, db, appId, setMessage } = useAuth();
-    const [appointment, setAppointment] = useState<Appointment | undefined>(initialAppointment);
+    const [appointment, setAppointment] = useState<EnrichedDoctorAppointment | undefined>(initialAppointment as EnrichedDoctorAppointment | undefined); // MODIFIED: Use EnrichedDoctorAppointment
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [showCompleteModal, setShowCompleteModal] = useState(false);
+    // Removed local teleconsultationLink state, it's now part of the `appointment` state
 
     useEffect(() => {
         const fetchAppointmentDetails = async () => {
@@ -1179,8 +1243,7 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
             setLoading(true);
             setError(null);
             try {
-                // Fetch appointment using collectionGroup to find it regardless of parent patient
-                // Requires composite index: appointments (id ASC) or (patient_id ASC, id ASC)
+                // Use collectionGroup to find the appointment regardless of patient subcollection
                 const q = query(
                     collectionGroup(db, 'appointments'),
                     where('__name__', '==', `artifacts/${appId}/users/${initialAppointment.patient_id}/appointments/${initialAppointment.id}`)
@@ -1190,8 +1253,8 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                 if (!snapshot.empty) {
                     const docSnap = snapshot.docs[0];
                     const apptData = docSnap.data() as Appointment;
-                    // Ensure the appointment belongs to the current app instance and doctor
                     const pathSegments = docSnap.ref.path.split('/');
+                    // Double check if the appointment belongs to the current app instance and is assigned to this doctor
                     if (pathSegments[1] !== appId || apptData.doctor_id !== user.uid) {
                         setError("Access Denied: Appointment not found or not assigned to you.");
                         setLoading(false);
@@ -1201,24 +1264,29 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                     let serviceName = 'Unknown Service';
                     let patientName = 'Unknown Patient';
                     let addressDetails: Address | undefined;
+                    let fetchedTeleconsultationLink: string | undefined; // Temporary variable for the link
 
-                    // Fetch service details
-                    const serviceDocRef = doc(db, `artifacts/${appId}/services`, apptData.service_id); // CORRECTED PATH
+                    const serviceDocRef = doc(db, `artifacts/${appId}/services`, apptData.service_id);
                     const serviceSnap = await getDoc(serviceDocRef);
                     serviceName = serviceSnap.exists() ? (serviceSnap.data() as Service).name : serviceName;
 
-                    // Fetch patient details
                     const patientUserDocRef = doc(db, `artifacts/${appId}/users/${apptData.patient_id}/users`, apptData.patient_id);
                     const patientProfileSnap = await getDoc(patientUserDocRef);
                     patientName = patientProfileSnap.exists() ? (patientProfileSnap.data() as UserProfile).full_name || (patientProfileSnap.data() as UserProfile).email : patientName;
 
-                    // Fetch address details (from patient's address collection)
-                    if (apptData.address_id) {
+                    if (apptData.appointment_type === 'in_person' && apptData.address_id) {
                         const patientAddressesCollectionRef = collection(db, `artifacts/${appId}/users/${apptData.patient_id}/addresses`);
                         const addressDocRef = doc(patientAddressesCollectionRef, apptData.address_id);
                         const addressSnap = await getDoc(addressDocRef);
                         if (addressSnap.exists()) {
                             addressDetails = addressSnap.data() as Address;
+                        }
+                    } else if (apptData.appointment_type === 'teleconsultation' && apptData.teleconsultation_id) {
+                        // Fetch teleconsultation link
+                        const teleconsultationDocRef = doc(db, `artifacts/${appId}/users/${apptData.patient_id}/appointments/${docSnap.id}/teleconsultations`, apptData.teleconsultation_id);
+                        const teleconsultationSnap = await getDoc(teleconsultationDocRef);
+                        if (teleconsultationSnap.exists()) {
+                            fetchedTeleconsultationLink = (teleconsultationSnap.data() as Teleconsultation).meeting_link;
                         }
                     }
 
@@ -1228,7 +1296,8 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                         serviceName,
                         patientName,
                         addressDetails,
-                    });
+                        teleconsultationLink: fetchedTeleconsultationLink, // Set the fetched link here
+                    } as EnrichedDoctorAppointment); // Explicitly cast
                 } else {
                     setError("Appointment not found.");
                 }
@@ -1243,7 +1312,7 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
         if (initialAppointment?.id && user && db && appId) {
             fetchAppointmentDetails();
         }
-    }, [initialAppointment, user, db, appId]);
+    }, [initialAppointment, user, db, appId]); // Removed teleconsultationLink from dependency array as it's set here
 
     const handleUpdateStatus = async (newStatus: Appointment['status']) => {
         setLoading(true);
@@ -1254,13 +1323,50 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
             return;
         }
         try {
-            // Update the appointment document on the patient's subcollection
             const appointmentDocRef = doc(db, `artifacts/${appId}/users/${appointment.patient_id}/appointments`, appointment.id);
-            await updateDoc(appointmentDocRef, {
+            const batch = writeBatch(db);
+
+            batch.update(appointmentDocRef, {
                 status: newStatus,
                 updated_at: serverTimestamp(),
             });
-            setAppointment(prev => prev ? { ...prev, status: newStatus } : prev); // Update local state
+
+            // Update Teleconsultation status if applicable
+            if (appointment.appointment_type === 'teleconsultation' && appointment.teleconsultation_id) {
+                const teleconsultationDocRef = doc(db, `artifacts/${appId}/users/${appointment.patient_id}/appointments/${appointment.id}/teleconsultations`, appointment.teleconsultation_id);
+                let teleStatus: Teleconsultation['status'] = 'scheduled';
+                if (newStatus === 'confirmed') teleStatus = 'scheduled'; // Or 'ready'
+                if (newStatus === 'service_started') teleStatus = 'in_progress';
+                if (newStatus === 'completed') teleStatus = 'completed';
+                if (newStatus === 'declined_by_doctor' || newStatus === 'cancelled_by_patient') teleStatus = 'cancelled';
+
+                batch.update(teleconsultationDocRef, {
+                    status: teleStatus,
+                    updated_at: serverTimestamp(),
+                    ...(newStatus === 'service_started' && { start_time: serverTimestamp() }),
+                    ...(newStatus === 'completed' && { end_time: serverTimestamp() }),
+                });
+            }
+
+            await batch.commit();
+
+            // After successful update, re-fetch the appointment to get the latest state including the teleconsultationLink
+            // This ensures the `appointment` state is fully consistent with DB
+            const updatedAppointmentSnapshot = await getDoc(appointmentDocRef);
+            if (updatedAppointmentSnapshot.exists()) {
+                const updatedApptData = updatedAppointmentSnapshot.data() as Appointment;
+                let fetchedTeleconsultationLink: string | undefined;
+                if (updatedApptData.appointment_type === 'teleconsultation' && updatedApptData.teleconsultation_id) {
+                    const teleconsultationDocRef = doc(db, `artifacts/${appId}/users/${updatedApptData.patient_id}/appointments/${updatedApptData.id}/teleconsultations`, updatedApptData.teleconsultation_id);
+                    const teleconsultationSnap = await getDoc(teleconsultationDocRef);
+                    if (teleconsultationSnap.exists()) {
+                        fetchedTeleconsultationLink = (teleconsultationSnap.data() as Teleconsultation).meeting_link;
+                    }
+                }
+                setAppointment(prev => prev ? { ...prev, ...updatedApptData, teleconsultationLink: fetchedTeleconsultationLink } : undefined);
+            }
+
+
             setMessage({ text: `Appointment status updated to ${newStatus?.replace(/_/g, ' ').toUpperCase()}.`, type: "success" });
             setShowConfirmModal(false);
             setShowCancelModal(false);
@@ -1273,6 +1379,27 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
             setLoading(false);
         }
     };
+
+    const handleStartCall = () => {
+        if (appointment?.teleconsultationLink) { // Use appointment.teleconsultationLink
+            window.open(appointment.teleconsultationLink, '_blank');
+        } else {
+            setMessage({ text: "Teleconsultation link not available yet.", type: "warning" });
+        }
+    };
+
+    const isStartCallActive = (appt: EnrichedDoctorAppointment) => {
+        if (appt.appointment_type === 'teleconsultation' && appt.teleconsultationLink && appt.status === 'confirmed') {
+            const startTime = appt.requested_time_slot.split(' - ')[0]; // Get "HH:MM AM/PM"
+            const apptDateTime = new Date(`${appt.requested_date} ${startTime}`);
+            const now = new Date();
+            const fifteenMinutesBefore = new Date(apptDateTime.getTime() - 15 * 60 * 1000);
+            const oneHourAfter = new Date(apptDateTime.getTime() + 60 * 60 * 1000);
+            return now >= fifteenMinutesBefore && now <= oneHourAfter;
+        }
+        return false;
+    };
+
 
     if (loading) return (
         <div className="d-flex justify-content-center align-items-center min-vh-100">
@@ -1299,8 +1426,13 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                     <strong>Patient:</strong> {appointment.patientName}
                 </div>
                 <div className="mb-3">
-                    <strong>Address:</strong> {appointment.addressDetails ? `${appointment.addressDetails.address_line_1}, ${appointment.addressDetails.city}, ${appointment.addressDetails.state} - ${appointment.addressDetails.zip_code}` : 'N/A'}
+                    <strong>Appointment Type:</strong> {appointment.appointment_type === 'in_person' ? 'In-person' : 'Teleconsultation'}
                 </div>
+                {appointment.appointment_type === 'in_person' && (
+                    <div className="mb-3">
+                        <strong>Address:</strong> {appointment.addressDetails ? `${appointment.addressDetails.address_line_1}, ${appointment.addressDetails.city}, ${appointment.addressDetails.state} - ${appointment.addressDetails.zip_code}` : 'N/A'}
+                    </div>
+                )}
                 <div className="mb-3">
                     <strong>Requested Date:</strong> {appointment.requested_date}
                 </div>
@@ -1318,17 +1450,23 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                 </div>
 
                 <div className="d-flex justify-content-center mt-4 flex-wrap gap-2">
-                    {appointment.status === 'assigned' && (
+                    {(appointment.appointment_type === 'in_person' || appointment.appointment_type === 'teleconsultation') && appointment.status === 'assigned' && (
                         <button className="btn btn-primary" onClick={() => handleUpdateStatus('confirmed')} disabled={loading}>Confirm Appointment</button>
                     )}
-                    {appointment.status === 'confirmed' && (
+                    {appointment.appointment_type === 'in_person' && appointment.status === 'confirmed' && (
                         <button className="btn btn-primary" onClick={() => handleUpdateStatus('on_the_way')} disabled={loading}>On the Way</button>
                     )}
-                    {appointment.status === 'on_the_way' && (
+                    {appointment.appointment_type === 'in_person' && appointment.status === 'on_the_way' && (
                         <button className="btn btn-primary" onClick={() => handleUpdateStatus('arrived')} disabled={loading}>Arrived</button>
                     )}
-                    {appointment.status === 'arrived' && (
+                    {appointment.appointment_type === 'in_person' && appointment.status === 'arrived' && (
                         <button className="btn btn-primary" onClick={() => handleUpdateStatus('service_started')} disabled={loading}>Start Service</button>
+                    )}
+                    {appointment.appointment_type === 'teleconsultation' && appointment.status === 'confirmed' && isStartCallActive(appointment) && (
+                        <button className="btn btn-success" onClick={handleStartCall} disabled={loading}>Start Teleconsultation</button>
+                    )}
+                    {appointment.appointment_type === 'teleconsultation' && appointment.status === 'confirmed' && !isStartCallActive(appointment) && (
+                        <button className="btn btn-secondary" disabled>Call Not Active Yet</button>
                     )}
                     {appointment.status === 'service_started' && (
                         <button className="btn btn-success" onClick={() => setShowCompleteModal(true)} disabled={loading}>Complete Service</button>
@@ -1338,7 +1476,6 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                     )}
                 </div>
 
-                {/* NEW: Buttons for adding patient data/consultation */}
                 {appointment.status === 'completed' && (
                     <div className="mt-4 pt-4 border-top">
                         <h4 className="h5 fw-bold text-info mb-3">Post-Appointment Actions</h4>
@@ -1381,7 +1518,7 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                 <CustomModal
                     title="Cancel Appointment"
                     message="Are you sure you want to cancel this appointment?"
-                    onConfirm={() => handleUpdateStatus('declined_by_doctor')} // Doctor declines/cancels
+                    onConfirm={() => handleUpdateStatus('declined_by_doctor')}
                     onCancel={() => setShowCancelModal(false)}
                     confirmText="Yes, Cancel"
                     cancelText="No"
@@ -1409,7 +1546,7 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
 // --- NEW COMPONENTS FOR DOCTOR HEALTH DATA MANAGEMENT ---
 
 // Manage Patient Records Page (Doctor)
-export const ManagePatientRecordsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
+export const ManagePatientRecordsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
     const { user, db, appId, setMessage } = useAuth();
     const [patients, setPatients] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
@@ -1427,7 +1564,6 @@ export const ManagePatientRecordsPage: React.FC<{ navigate: (page: string | numb
                 return;
             }
             try {
-                // Fetch all patient profiles
                 const patientsQuery = query(
                     collectionGroup(db, 'users'),
                     where('role', '==', 'patient')
@@ -1437,12 +1573,12 @@ export const ManagePatientRecordsPage: React.FC<{ navigate: (page: string | numb
                 snapshot.docs.forEach(docSnap => {
                     const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
                     const pathSegments = docSnap.ref.path.split('/');
-                    if (pathSegments[1] === appId) { // Ensure it belongs to this app's structure
+                    if (pathSegments[1] === appId) {
                         fetchedPatients.push(profileData);
                     }
                 });
                 setPatients(fetchedPatients);
-                setFilteredPatients(fetchedPatients); // Initialize filtered list
+                setFilteredPatients(fetchedPatients);
             } catch (err: any) {
                 console.error("Error fetching patients:", err);
                 setError(err.message);
@@ -1458,7 +1594,6 @@ export const ManagePatientRecordsPage: React.FC<{ navigate: (page: string | numb
     }, [user, db, appId]);
 
     useEffect(() => {
-        // Filter patients based on search term
         const lowerCaseSearchTerm = searchTerm.toLowerCase();
         const results = patients.filter(patient =>
             (patient.full_name?.toLowerCase().includes(lowerCaseSearchTerm) ||
@@ -1523,7 +1658,7 @@ export const ManagePatientRecordsPage: React.FC<{ navigate: (page: string | numb
 };
 
 // Patient Health Data View Page (Doctor)
-export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string }> = ({ navigate, patientId, patientName }) => { // Updated navigate type
+export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string }> = ({ navigate, patientId, patientName }) => {
     const { user, db, appId, setMessage } = useAuth();
     const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
     const [healthRecords, setHealthRecords] = useState<HealthRecord[]>([]);
@@ -1541,7 +1676,6 @@ export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | num
                 return;
             }
             try {
-                // Pre-fetch all doctors and services once for enrichment
                 const doctorsMap = new Map<string, UserProfile>();
                 const servicesMap = new Map<string, Service>();
 
@@ -1549,12 +1683,12 @@ export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | num
                 allUsersSnapshot.docs.forEach(docSnap => {
                     const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
                     const pathSegments = docSnap.ref.path.split('/');
-                    if (pathSegments[1] === appId && profileData.role === 'doctor') {
+                    if (pathSegments[1] === appId) {
                         doctorsMap.set(docSnap.id, profileData);
                     }
                 });
 
-                const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // CORRECTED PATH
+                const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`));
                 servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
 
 
@@ -1635,8 +1769,6 @@ export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | num
                 <div className="d-flex justify-content-center gap-2 mb-4 flex-wrap">
                     <button className="btn btn-outline-primary" onClick={() => navigate('addPrescription', { patientId, patientName })}>Add Prescription</button>
                     <button className="btn btn-outline-primary" onClick={() => navigate('addHealthRecord', { patientId, patientName })}>Add Health Record</button>
-                    {/* Consultation notes are typically added via an appointment, so not a direct "add" here unless it's a general consultation */}
-                    {/* <button className="btn btn-outline-primary" onClick={() => navigate('addConsultation', { patientId, patientName })}>Add Consultation</button> */}
                 </div>
 
                 <h4 className="h5 fw-bold text-primary mb-3">Prescriptions</h4>
@@ -1649,9 +1781,9 @@ export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | num
                                 <tr>
                                     <th>Prescribed Date</th>
                                     <th>Expires Date</th>
-                                    <th>Prescribed By</th> {/* Added back for clarity */}
+                                    <th>Prescribed By</th>
                                     <th>Medications</th>
-                                    <th>Actions</th> {/* NEW: Actions column */}
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1659,7 +1791,7 @@ export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | num
                                     <tr key={p.id}>
                                         <td>{p.prescribed_date}</td>
                                         <td>{p.expires_date || 'N/A'}</td>
-                                        <td>{p.doctorName}</td> {/* Display doctor name */}
+                                        <td>{p.doctorName}</td>
                                         <td>
                                             {p.medications && p.medications.length > 0 ? (
                                                 <ul className="list-unstyled mb-0">
@@ -1698,7 +1830,7 @@ export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | num
                                     <th>Type</th>
                                     <th>Title</th>
                                     <th>Description</th>
-                                    <th>Added By</th> {/* Added back for clarity */}
+                                    <th>Added By</th>
                                     <th>Attachment</th>
                                 </tr>
                             </thead>
@@ -1709,7 +1841,7 @@ export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | num
                                         <td>{r.record_type.replace(/_/g, ' ').toUpperCase()}</td>
                                         <td>{r.title || 'N/A'}</td>
                                         <td>{r.description}</td>
-                                        <td>{r.doctorName}</td> {/* Display doctor name */}
+                                        <td>{r.doctorName}</td>
                                         <td>
                                             {r.attachment_url ? (
                                                 <a href={r.attachment_url} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline-primary">View</a>
@@ -1732,8 +1864,8 @@ export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | num
                                 <tr>
                                     <th>Date</th>
                                     <th>Time</th>
-                                    <th>Doctor</th> {/* Added back for clarity */}
-                                    <th>Service</th> {/* Added back for clarity */}
+                                    <th>Doctor</th>
+                                    <th>Service</th>
                                     <th>Diagnosis</th>
                                     <th>Recommendations</th>
                                     <th>Notes</th>
@@ -1744,8 +1876,8 @@ export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | num
                                     <tr key={c.id}>
                                         <td>{c.consultation_date}</td>
                                         <td>{c.consultation_time}</td>
-                                        <td>{c.doctorName}</td> {/* Display doctor name */}
-                                        <td>{c.serviceName}</td> {/* Display service name */}
+                                        <td>{c.doctorName}</td>
+                                        <td>{c.serviceName}</td>
                                         <td>{c.diagnosis || 'N/A'}</td>
                                         <td>{c.recommendations || 'N/A'}</td>
                                         <td>{c.notes}</td>
@@ -1764,7 +1896,7 @@ export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | num
 };
 
 // Add Prescription Page (Doctor) - UPDATED FOR MULTIPLE MEDICATIONS
-export const AddPrescriptionPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string; appointmentId?: string }> = ({ navigate, patientId, patientName, appointmentId }) => { // Updated navigate type
+export const AddPrescriptionPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string; appointmentId?: string }> = ({ navigate, patientId, patientName, appointmentId }) => {
     const { user, db, appId, setMessage, message } = useAuth();
     const [loading, setLoading] = useState(false);
     const [prescribedDate, setPrescribedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -1815,15 +1947,15 @@ export const AddPrescriptionPage: React.FC<{ navigate: (page: string | number, d
             await addDoc(prescriptionsCollectionRef, {
                 patient_id: patientId,
                 doctor_id: user.uid,
-                appointment_id: appointmentId || null, // Link to appointment if provided
-                medications: medications, // Save the array of medications
+                appointment_id: appointmentId || null,
+                medications: medications,
                 prescribed_date: prescribedDate,
                 expires_date: expiresDate || null,
                 created_at: serverTimestamp(),
                 updated_at: serverTimestamp(),
             });
             setMessage({ text: 'Prescription added successfully!', type: 'success' });
-            navigate('patientHealthDataView', { patientId, patientName }); // Go back to patient's health data view
+            navigate('patientHealthDataView', { patientId, patientName });
         } catch (err: any) {
             console.error("Error adding prescription:", err);
             setMessage({ text: `Failed to add prescription: ${err.message}`, type: "error" });
@@ -1902,7 +2034,7 @@ export const AddPrescriptionPage: React.FC<{ navigate: (page: string | number, d
 };
 
 // Add Health Record Page (Doctor)
-export const AddHealthRecordPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string; appointmentId?: string }> = ({ navigate, patientId, patientName, appointmentId }) => { // Updated navigate type
+export const AddHealthRecordPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string; appointmentId?: string }> = ({ navigate, patientId, patientName, appointmentId }) => {
     const { user, db, appId, setMessage, message } = useAuth();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState<Partial<HealthRecord>>({
@@ -1933,7 +2065,7 @@ export const AddHealthRecordPage: React.FC<{ navigate: (page: string | number, d
             await addDoc(healthRecordsCollectionRef, {
                 ...formData,
                 patient_id: patientId,
-                doctor_id: user.uid, // Doctor is adding this record
+                doctor_id: user.uid,
                 created_at: serverTimestamp(),
                 updated_at: serverTimestamp(),
             });
@@ -1994,7 +2126,7 @@ export const AddHealthRecordPage: React.FC<{ navigate: (page: string | number, d
 };
 
 // Add Consultation Page (Doctor)
-export const AddConsultationPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string; appointmentId: string }> = ({ navigate, patientId, patientName, appointmentId }) => { // Updated navigate type
+export const AddConsultationPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string; appointmentId: string }> = ({ navigate, patientId, patientName, appointmentId }) => {
     const { user, db, appId, setMessage, message } = useAuth();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState<Partial<Consultation>>({
@@ -2031,7 +2163,6 @@ export const AddConsultationPage: React.FC<{ navigate: (page: string | number, d
                 updated_at: serverTimestamp(),
             });
             setMessage({ text: 'Consultation notes added successfully!', type: 'success' });
-            // Navigate back to appointment details or patient health data view
             navigate('appointmentDetails', { appointment: { id: appointmentId, patient_id: patientId } });
         } catch (err: any) {
             console.error("Error adding consultation:", err);

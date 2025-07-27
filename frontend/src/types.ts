@@ -48,7 +48,7 @@ export interface Offer {
 
 export interface Address {
     id: string;
-    user_id: string;
+    user_id: string; // Changed from patient_id to user_id for broader use
     address_line_1: string;
     address_line_2?: string;
     city: string;
@@ -64,21 +64,27 @@ export interface Appointment {
     id: string;
     patient_id: string;
     service_id: string;
-    address_id: string;
+    address_id: string | null; // MODIFIED: Can be null for teleconsultation
     requested_date: string; // YYYY-MM-DD
     requested_time_slot: string; // e.g., "09:00 AM - 10:00 AM"
     estimated_cost: number;
     status: 'pending_assignment' | 'assigned' | 'confirmed' | 'on_the_way' | 'arrived' | 'service_started' | 'completed' | 'cancelled_by_patient' | 'declined_by_doctor' | 'rescheduled';
-    payment_status: 'pending' | 'paid' | 'failed';
-    doctor_id?: string;
+    payment_status: 'pending' | 'paid' | 'refunded'; // MODIFIED: Added 'refunded'
+    doctor_id: string | null; // MODIFIED: Explicitly allow null for unassigned
     assigned_at?: Timestamp | FieldValue;
-    actual_start_time?: Timestamp | FieldValue;
-    actual_end_time?: Timestamp | FieldValue;
+    confirmed_at?: Timestamp | FieldValue;
+    started_at?: Timestamp | FieldValue;
+    completed_at?: Timestamp | FieldValue;
     cancellation_reason?: string;
     reschedule_reason?: string;
     payment_id?: string;
     created_at: Timestamp | FieldValue;
     updated_at: Timestamp | FieldValue;
+
+    // NEW: Teleconsultation fields
+    appointment_type: 'in_person' | 'teleconsultation'; // NEW: Type of appointment
+    teleconsultation_id?: string; // NEW: Reference to the Teleconsultation document if type is 'teleconsultation'
+
     // Enriched fields for UI display (not stored in Firestore directly, but added client-side)
     patientName?: string;
     serviceName?: string;
@@ -90,26 +96,31 @@ export interface Payment {
     id: string;
     appointment_id: string;
     patient_id: string;
+    doctor_id: string | null; // MODIFIED: Added doctor_id
+    service_id: string; // MODIFIED: Added service_id
     amount: number;
     currency: string;
-    payment_gateway_transaction_id: string;
-    status: 'successful' | 'failed';
+    payment_gateway_transaction_id?: string; // MODIFIED: Made optional for manual payments
+    status: 'successful' | 'failed' | 'refunded'; // MODIFIED: Added 'refunded'
     payment_method: string;
-    platform_fee_amount: number;
-    doctor_fee_amount: number;
-    admin_fee_amount: number;
+    platform_fee_amount?: number; // MODIFIED: Made optional
+    doctor_fee_amount?: number; // MODIFIED: Made optional
+    admin_fee_amount?: number; // MODIFIED: Made optional
     transaction_date: Timestamp | FieldValue;
     recorded_by?: string; // UID of admin/superadmin who recorded it
+    created_at?: Timestamp | FieldValue; // MODIFIED: Added created_at
+    updated_at?: Timestamp | FieldValue; // MODIFIED: Added updated_at
 }
 
 export interface Feedback {
     id: string;
     patient_id: string;
     appointment_id: string;
-    doctor_id?: string; // Optional if feedback is general or not tied to a doctor
+    doctor_id: string; // MODIFIED: Made mandatory as feedback is usually for a doctor
     rating: number; // 1-5 stars
     comments?: string;
     created_at: Timestamp | FieldValue;
+    updated_at?: Timestamp | FieldValue; // MODIFIED: Added updated_at
 }
 
 export interface FeeConfiguration {
@@ -118,7 +129,7 @@ export interface FeeConfiguration {
     doctor_share_percentage: number;
     admin_fee_percentage: number;
     effective_from: Timestamp | FieldValue;
-    created_by: string;
+    created_by: string; // User ID of superadmin who set it
     created_at: Timestamp | FieldValue;
     updated_at: Timestamp | FieldValue;
 }
@@ -179,4 +190,20 @@ export interface Consultation {
     doctorName?: string;
     patientName?: string;
     serviceName?: string;
+}
+
+// NEW: Teleconsultation Interface
+export interface Teleconsultation {
+    id: string; // Unique ID for the teleconsultation session
+    appointment_id: string; // Link to the parent Appointment
+    patient_id: string;
+    doctor_id: string;
+    meeting_link: string; // The Jitsi Meet URL
+    start_time?: Timestamp | FieldValue; // When the call actually started
+    end_time?: Timestamp | FieldValue;   // When the call actually ended
+    status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'failed';
+    platform_used: 'Jitsi'; // Or 'Google Meet', 'WebRTC' etc.
+    notes?: string; // Notes about the teleconsultation session itself (e.g., technical issues)
+    created_at: Timestamp | FieldValue;
+    updated_at: Timestamp | FieldValue;
 }
