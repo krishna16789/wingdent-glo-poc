@@ -79,6 +79,49 @@ export const AIAnalyzerPage: React.FC<AIAnalyzerPageProps> = ({ navigate }) => {
                 })
             );
 
+            /**
+             * const newPrompt = `Analyze the provided dental/mouth images for any potential dental problems, issues, or areas of concern.
+
+            **Instructions:**
+            1. **Initial Assessment (Chain of Thought):** First, internally process the image by systematically examining each major area of the mouth. This includes:
+                * **Teeth:** Look for signs of decay, chips, fractures, wear, discoloration, or poor alignment and any other potential concerns.
+                * **Gums:** Look for inflammation, bleeding, recession, or discoloration.
+                * **Tongue and other soft tissues:** Look for any lesions, growths, or unusual textures.
+                * **Overall hygiene:** Assess the presence of plaque or tartar buildup.
+            
+            2. **Analysis and Findings:** Based on the systematic assessment, provide a detailed analysis of all findings. Present the findings in a structured, consistent format.
+            
+            3. **Formatting:** Use the following structure for your final output to ensure clarity and consistency:
+            
+                **Analysis of Dental Images**
+            
+                **I. General Observations:**
+                * State the overall condition of the mouth (e.g., "Good overall hygiene," "Signs of significant plaque buildup").
+            
+                **II. Detailed Findings:**
+                * **Teeth:**
+                    * Use bullet points for each specific finding.
+                    * Example: "Visible interproximal decay on the distal surface of the lower-left molar (#19)."
+                    * Example: "Evidence of a chip on the incisal edge of the upper-right central incisor (#8)."
+                * **Gums (Gingiva):**
+                    * Use bullet points for each specific finding.
+                    * Example: "Generalized gingivitis indicated by redness and swelling along the gum line."
+                    * Example: "Localized gum recession observed around the lower-right canine (#27)."
+                * **Soft Tissues (Tongue, Cheeks, etc.):**
+                    * Use bullet points for each specific finding.
+                    * Example: "Apparent geographic tongue with patches of smooth, red areas."
+                * **Oral Hygiene:**
+                    * Provide a concise summary of the hygiene level.
+                    * Example: "Significant plaque accumulation noted on the lingual surfaces of the lower anterior teeth."
+            
+                **III. Potential Concerns/Recommendations:**
+                * List specific areas that may require a professional dental consultation.
+                * Example: "Further investigation is recommended for the suspected decay on tooth #19."
+                * Example: "Professional cleaning may be necessary to address plaque and tartar buildup."
+            
+            **Goal:** The final output should be a single, comprehensive analysis that is structured, easy to read, and consistent across different requests for the same image.`
+             */
+
             const prompt = `Analyze the provided dental/mouth images for any potential dental problems, issues, or areas of concern. Provide a detailed analysis of findings, using as many clear headings or bullet points if applicable.
             `;
 
