@@ -10,11 +10,11 @@ import { AIAnalyzerPage } from './AIAnalyzerPage'; // Import the new AIAnalyzerP
 
 const App: React.FC = () => {
     const { user, loading, message, logout } = useAuth();
-    const [currentPage, setCurrentPage] = useState<string>('dashboard'); // Default page
+    const [currentPage, setCurrentPage] = useState<string | number>('dashboard'); // Default page
     const [pageData, setPageData] = useState<any>(null); // State to pass data to pages
 
     // Function to navigate between pages within the dashboard
-    const navigate = (page: string, data?: any) => {
+    const navigate = (page: string | number, data?: any) => {
         setCurrentPage(page);
         setPageData(data);
     };
@@ -47,6 +47,10 @@ const App: React.FC = () => {
             case 'myBookings':
             case 'myAddresses':
             case 'appointmentStatus':
+            case 'myPrescriptions':
+            case 'myHealthRecords':
+            case 'myConsultations':
+            case 'prescriptionViewer':
             case 'payment':
             case 'feedback':
             case 'helpFAQ':
@@ -59,11 +63,18 @@ const App: React.FC = () => {
             case 'patientFeedback':
             case 'doctorReports':
             case 'appointmentDetails':
+            case 'patientHealthDataView':    
+            case 'managePatientRecords':
+            case 'addPrescription':
+            case 'addHealthRecord':
+            case 'addConsultation':
                 return <DoctorDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
             // Specific pages for Admin role
             case 'userManagement':
             case 'serviceManagement':
             case 'offerManagement':
+            case 'adminPatientOversight':
+            case 'adminPatientHealthDataView':
             case 'appointmentOversight':
                 return <AdminDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
             // Specific pages for SuperAdmin role

@@ -106,7 +106,7 @@ export interface Feedback {
     id: string;
     patient_id: string;
     appointment_id: string;
-    doctor_id?: string;
+    doctor_id?: string; // Optional if feedback is general or not tied to a doctor
     rating: number; // 1-5 stars
     comments?: string;
     created_at: Timestamp | FieldValue;
@@ -121,4 +121,62 @@ export interface FeeConfiguration {
     created_by: string;
     created_at: Timestamp | FieldValue;
     updated_at: Timestamp | FieldValue;
+}
+
+// NEW INTERFACE for individual medication items within a prescription
+export interface MedicationItem {
+    medication_name: string;
+    dosage: string; // e.g., "10mg", "2 tablets"
+    frequency: string; // e.g., "Once daily", "Twice a day after meals"
+    instructions: string; // e.g., "Take with food", "Do not exceed 3 doses in 24 hours"
+}
+
+// UPDATED Prescription interface
+export interface Prescription {
+    id: string;
+    patient_id: string;
+    doctor_id: string;
+    appointment_id?: string; // Optional, if prescription is not tied to a specific appointment
+    medications: MedicationItem[]; // Array of medication items
+    prescribed_date: string; // YYYY-MM-DD
+    expires_date?: string; // YYYY-MM-DD, optional
+    created_at: Timestamp | FieldValue;
+    updated_at: Timestamp | FieldValue;
+    // Enriched fields for display (not stored in Firestore)
+    doctorName?: string;
+    patientName?: string;
+}
+
+export interface HealthRecord {
+    id: string;
+    patient_id: string;
+    doctor_id?: string; // Optional, if record is patient-added or not tied to a specific doctor
+    record_type: 'diagnosis' | 'test_result' | 'allergy' | 'medical_history' | 'vaccination' | 'other';
+    record_date: string; // YYYY-MM-DD
+    title?: string; // e.g., "Initial Diagnosis", "Blood Test Results"
+    description: string; // Detailed notes or results
+    attachment_url?: string; // URL to a file in cloud storage (e.g., medical report PDF)
+    created_at: Timestamp | FieldValue;
+    updated_at: Timestamp | FieldValue;
+    // Enriched fields for display (not stored in Firestore)
+    doctorName?: string;
+    patientName?: string;
+}
+
+export interface Consultation {
+    id: string;
+    appointment_id: string; // Each consultation is tied to an appointment
+    patient_id: string;
+    doctor_id: string;
+    consultation_date: string; // YYYY-MM-DD
+    consultation_time: string; // e.g., "09:30 AM"
+    notes: string; // Detailed consultation notes
+    diagnosis?: string; // Doctor's diagnosis
+    recommendations?: string; // Treatment recommendations
+    created_at: Timestamp | FieldValue;
+    updated_at: Timestamp | FieldValue;
+    // Enriched fields for display (not stored in Firestore)
+    doctorName?: string;
+    patientName?: string;
+    serviceName?: string;
 }

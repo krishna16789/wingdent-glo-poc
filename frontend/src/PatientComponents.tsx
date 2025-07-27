@@ -1,13 +1,18 @@
 // frontend/src/PatientComponents.tsx
 import React, { useState, useEffect } from 'react';
-import { collection, doc, getDocs, getDoc, addDoc, updateDoc, query, where, serverTimestamp, Timestamp, writeBatch, deleteDoc } from 'firebase/firestore';
-import { useAuth } from './AuthContext';
+import { collection, doc, getDocs, getDoc, addDoc, updateDoc, query, where, serverTimestamp, collectionGroup, Timestamp, writeBatch, deleteDoc } from 'firebase/firestore';
+import { useAuth } from './AuthContext'; // Import UserProfile from AuthContext
 import { LoadingSpinner, MessageDisplay, CustomModal } from './CommonComponents';
-import { Service, Offer, Appointment, Address, Payment, Feedback, UserProfile } from './types'; // Import necessary types
+
+// Define types for data structures (now imported from types.ts)
+import { Service, Offer, Address, Appointment, Payment, Prescription, HealthRecord, Consultation, FeeConfiguration, Feedback, MedicationItem,UserProfile } from './types'; // Import MedicationItem and updated Prescription type
+
+// Import the new PrescriptionViewerPage
+import { PrescriptionViewerPage } from './PrescriptionViewerPage'; // NEW IMPORT
 
 // Define a common interface for dashboard props
 export interface DashboardProps {
-    navigate: (page: string, data?: any) => void;
+    navigate: (page: string | number, data?: any) => void; // MODIFIED: Added 'number' to page type
     currentPage: string;
     pageData: any;
 }
@@ -29,9 +34,252 @@ const getStatusBadgeClass = (status: Appointment['status']) => {
     }
 };
 
+// Patient Dashboard Component
+export const PatientDashboard: React.FC<DashboardProps> = ({ navigate, currentPage, pageData }) => {
+    const { user, logout, db, appId, message } = useAuth(); // Added message from useAuth
+    const [latestAppointment, setLatestAppointment] = useState<Appointment | null>(null);
+    const [upcomingAppointmentsCount, setUpcomingAppointmentsCount] = useState<number>(0);
+    const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
+    const [loadingDashboard, setLoadingDashboard] = useState(true);
+    const [errorDashboard, setErrorDashboard] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchDashboardData = async () => {
+            setLoadingDashboard(true);
+            setErrorDashboard(null);
+            if (!db || !appId || !user?.uid) {
+                setErrorDashboard("Firestore not initialized or user not logged in.");
+                setLoadingDashboard(false);
+                return;
+            }
+            try {
+                // Fetch latest appointment
+                const appointmentsCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/appointments`);
+                const qLatest = query(
+                    appointmentsCollectionRef,
+                    where('status', 'in', ['pending_assignment', 'assigned', 'confirmed', 'on_the_way', 'arrived', 'service_started']),
+                );
+                const latestSnapshot = await getDocs(qLatest);
+                const upcomingAppts = latestSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Appointment[];
+
+                // Sort in memory by date and then time slot
+                upcomingAppts.sort((a, b) => {
+                    const dateA = new Date(`${a.requested_date} ${a.requested_time_slot.split(' ')[0]}`); // Assuming time slot starts with HH:MM
+                    const dateB = new Date(`${b.requested_date} ${b.requested_time_slot.split(' ')[0]}`);
+                    return dateA.getTime() - dateB.getTime();
+                });
+
+                if (upcomingAppts.length > 0) {
+                    const latestAppt = upcomingAppts[0];
+                    let serviceName = 'Unknown Service';
+                    let doctorName = 'Unassigned';
+
+                    // Fetch service details
+                    const serviceDocRef = doc(db, `artifacts/${appId}/services`, latestAppt.service_id); // Corrected path
+                    const serviceSnap = await getDoc(serviceDocRef);
+                    serviceName = serviceSnap.exists() ? (serviceSnap.data() as Service).name : serviceName;
+
+                    // Fetch doctor details if assigned
+                    if (latestAppt.doctor_id) {
+                        const doctorUserDocRef = doc(db, `artifacts/${appId}/users/${latestAppt.doctor_id}/users`, latestAppt.doctor_id);
+                        const doctorProfileSnap = await getDoc(doctorUserDocRef);
+                        doctorName = doctorProfileSnap.exists() ? (doctorProfileSnap.data() as UserProfile).full_name || (doctorProfileSnap.data() as UserProfile).email : doctorName;
+                    }
+
+                    setLatestAppointment({
+                        ...latestAppt,
+                        serviceName,
+                        doctorName,
+                    });
+                } else {
+                    setLatestAppointment(null);
+                }
+
+                setUpcomingAppointmentsCount(upcomingAppts.length);
+
+                // Fetch unread notifications count (placeholder logic)
+                const notificationsCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/notifications`);
+                const qNotifications = query(notificationsCollectionRef, where('read', '==', false));
+                const notificationsSnapshot = await getDocs(qNotifications);
+                setUnreadNotificationsCount(notificationsSnapshot.size);
+
+            } catch (err: any) {
+                console.error("Error fetching patient dashboard data:", err);
+                setErrorDashboard(err.message);
+            } finally {
+                setLoadingDashboard(false);
+            }
+        };
+
+        if (user && db && appId && currentPage === 'dashboard') {
+            fetchDashboardData();
+        }
+    }, [user, db, appId, currentPage]);
+
+
+    const renderPatientPage = () => {
+        switch (currentPage) {
+            case 'dashboard':
+                if (loadingDashboard) return (
+                    <div className="d-flex justify-content-center align-items-center min-vh-100">
+                        <div className="text-center p-5">
+                            <LoadingSpinner /><p className="mt-3 text-muted">Loading dashboard...</p>
+                        </div>
+                    </div>
+                );
+                if (errorDashboard) return <MessageDisplay message={{ text: errorDashboard, type: "error" }} />;
+                if (!user || user.profile?.role !== 'patient') {
+                    return <MessageDisplay message={{ text: "Access Denied. You must be a Patient to view this page.", type: "error" }} />;
+                }
+
+                return (
+                    <div className="container py-4">
+                        <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
+                            <h2 className="h3 fw-bold text-success mb-4 text-center">Patient Dashboard</h2>
+                            <MessageDisplay message={message} /> {/* Display messages from AuthContext */}
+
+                            <div className="text-center mb-4">
+                                <img
+                                    src={user?.photoURL || "https://placehold.co/100x100/007bff/ffffff?text=P"}
+                                    onError={(e: any) => { e.target.onerror = null; e.target.src="https://placehold.co/100x100/007bff/ffffff?text=P"; }}
+                                    alt="Profile"
+                                    className="rounded-circle mb-3"
+                                    style={{ width: '100px', height: '100px', objectFit: 'cover', border: '3px solid #007bff' }}
+                                />
+                                <h4 className="fw-bold text-dark">{user?.profile?.full_name || user?.email || 'Patient'}</h4>
+                                <p className="text-muted mb-1">Role: {user?.profile?.role}</p>
+                                <p className="small text-break text-muted">User ID: <span className="font-monospace">{user?.uid}</span></p>
+                            </div>
+
+                            <div className="row g-4 mb-5">
+                                <div className="col-md-4">
+                                    <div className="card h-100 bg-primary text-white shadow-sm rounded-3">
+                                        <div className="card-body d-flex flex-column justify-content-between">
+                                            <h5 className="card-title fw-bold">Book New Service</h5>
+                                            <p className="card-text">Quickly schedule your next dental appointment.</p>
+                                            <button className="btn btn-light text-primary mt-3" onClick={() => navigate('bookService')}>Book Now</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4">
+                                    <div className="card h-100 bg-info text-white shadow-sm rounded-3">
+                                        <div className="card-body d-flex flex-column justify-content-between">
+                                            <h5 className="card-title fw-bold">My Bookings</h5>
+                                            <p className="card-text">View and manage your upcoming and past appointments.</p>
+                                            <p className="card-text fs-4 fw-bold">{upcomingAppointmentsCount} Upcoming</p>
+                                            <button className="btn btn-light text-info mt-3" onClick={() => navigate('myBookings')}>View Bookings</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-4">
+                                    <div className="card h-100 bg-secondary text-white shadow-sm rounded-3">
+                                        <div className="card-body d-flex flex-column justify-content-between">
+                                            <h5 className="card-title fw-bold">My Addresses</h5>
+                                            <p className="card-text">Manage your saved addresses for quick booking.</p>
+                                            <button className="btn btn-light text-secondary mt-3" onClick={() => navigate('myAddresses')}>Manage Addresses</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="row g-4 mb-5">
+                                <div className="col-md-6">
+                                    <div className="card h-100 shadow-sm rounded-3">
+                                        <div className="card-body">
+                                            <h5 className="card-title fw-bold text-primary">Latest Appointment Status</h5>
+                                            {latestAppointment ? (
+                                                <>
+                                                    <p className="card-text mb-1"><strong>Service:</strong> {latestAppointment.serviceName}</p>
+                                                    <p className="card-text mb-1"><strong>Date:</strong> {latestAppointment.requested_date}</p>
+                                                    <p className="card-text mb-1"><strong>Time:</strong> {latestAppointment.requested_time_slot}</p>
+                                                    <p className="card-text mb-1"><strong>Doctor:</strong> {latestAppointment.doctorName}</p>
+                                                    <p className="card-text mb-3"><strong>Status:</strong> <span className={`badge ${getStatusBadgeClass(latestAppointment.status)}`}>{latestAppointment.status.replace(/_/g, ' ').toUpperCase()}</span></p>
+                                                    <button className="btn btn-outline-primary" onClick={() => navigate('appointmentStatus', { appointment: latestAppointment })}>View Details</button>
+                                                </>
+                                            ) : (
+                                                <p className="text-muted">No upcoming appointments. Book one now!</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-md-6">
+                                    <div className="card h-100 shadow-sm rounded-3">
+                                        <div className="card-body">
+                                            <h5 className="card-title fw-bold text-success">Notifications & Announcements</h5>
+                                            <ul className="list-group list-group-flush">
+                                                <li className="list-group-item d-flex justify-content-between align-items-center">
+                                                    Unread Notifications
+                                                    <span className="badge bg-danger rounded-pill">{unreadNotificationsCount}</span>
+                                                </li>
+                                                <li className="list-group-item">Your next appointment on {latestAppointment?.requested_date || 'N/A'} is {latestAppointment?.status.replace(/_/g, ' ') || 'not yet confirmed'}.</li>
+                                                <li className="list-group-item">New offers available! Check out our 'Special Offers' section.</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* NEW: Health Data Section */}
+                            <div className="row g-4 mb-4">
+                                <div className="col-md-12">
+                                    <div className="card h-100 shadow-sm rounded-3">
+                                        <div className="card-body">
+                                            <h5 className="card-title fw-bold text-primary">My Health Data</h5>
+                                            <p className="card-text text-muted">Access your prescriptions, health records, and consultation history.</p>
+                                            <div className="d-grid gap-2 mt-3">
+                                                <button className="btn btn-outline-primary" onClick={() => navigate('myPrescriptions')}>My Prescriptions</button>
+                                                <button className="btn btn-outline-primary" onClick={() => navigate('myHealthRecords')}>My Health Records</button>
+                                                <button className="btn btn-outline-primary" onClick={() => navigate('myConsultations')}>My Consultations</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="d-flex justify-content-center mt-4">
+                                <button className="btn btn-link" onClick={logout}>Logout</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            case 'bookService':
+                return <BookServicePage navigate={navigate} />;
+            case 'myBookings':
+                return <MyBookingsPage navigate={navigate} />;
+            case 'myAddresses':
+                return <MyAddressesPage navigate={navigate} />;
+            case 'appointmentStatus':
+                return <AppointmentStatusPage navigate={navigate} appointment={pageData?.appointment} />;
+            case 'payment':
+                return <PaymentPage navigate={navigate} appointmentId={pageData.appointmentId} amount={pageData.amount} />;
+            case 'feedback':
+                return <FeedbackPage navigate={navigate} appointmentId={pageData.appointmentId} doctorId={pageData.doctorId} />;
+            case 'helpFAQ':
+                return <HelpFAQPage navigate={navigate} />;
+            // NEW CASES FOR PATIENT HEALTH DATA
+            case 'myPrescriptions':
+                return <MyPrescriptionsPage navigate={navigate} />;
+            case 'myHealthRecords':
+                return <MyHealthRecordsPage navigate={navigate} />;
+            case 'myConsultations':
+                return <MyConsultationsPage navigate={navigate} />;
+            case 'prescriptionViewer': // New case for prescription viewer
+                return <PrescriptionViewerPage navigate={navigate} patientId={pageData.patientId} prescriptionId={pageData.prescriptionId} />;
+            default:
+                return <MessageDisplay message={{ text: "Page not found.", type: "error" }} />;
+        }
+    };
+
+    return (
+        <div className="container py-4">
+            {renderPatientPage()}
+        </div>
+    );
+};
+
 // My Addresses Page (Patient) - This serves as the Address Management Page
-export const MyAddressesPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, db, appId } = useAuth();
+export const MyAddressesPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
     const [addresses, setAddresses] = useState<Address[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -99,9 +347,14 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string, data?: any) =>
 
     const handleSaveAddress = async () => {
         if (!db || !appId || !user?.uid) {
-            setError("Firestore not initialized or user not logged in.");
+            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" });
             return;
         }
+        if (!addressFormData.address_line_1 || !addressFormData.city || !addressFormData.state || !addressFormData.zip_code || !addressFormData.label) {
+            setMessage({ text: "Please fill all required address fields.", type: "error" });
+            return;
+        }
+
         setLoading(true);
         setError(null);
         try {
@@ -124,6 +377,7 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string, data?: any) =>
                     ...addressFormData,
                     updated_at: serverTimestamp(),
                 });
+                setMessage({ text: 'Address updated successfully!', type: 'success' }); // Use setMessage
             } else {
                 // Add new address
                 const addressesCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/addresses`);
@@ -133,14 +387,15 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string, data?: any) =>
                     created_at: serverTimestamp(),
                     updated_at: serverTimestamp(),
                 });
+                setMessage({ text: 'Address added successfully!', type: 'success' }); // Use setMessage
             }
             await batch.commit();
             setShowAddressModal(false);
-            alert('Address saved successfully!');
             fetchAddresses();
         } catch (err: any) {
             console.error("Error saving address:", err);
             setError(err.message);
+            setMessage({ text: `Error saving address: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -157,11 +412,12 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string, data?: any) =>
             const addressDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/addresses`, showDeleteAddressModal.id);
             await deleteDoc(addressDocRef);
             setShowDeleteAddressModal(null);
-            alert('Address deleted successfully!');
+            setMessage({ text: 'Address deleted successfully!', type: 'success' }); // Use setMessage
             fetchAddresses();
         } catch (err: any) {
-            console.error("Error deleting address:", err);
+                console.error("Error deleting address:", err);
             setError(err.message);
+            setMessage({ text: `Error deleting address: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -174,9 +430,9 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string, data?: any) =>
             </div>
         </div>
     );
-    if (error) return <div className="alert alert-danger text-center m-4">{error}</div>;
+    if (error) return <MessageDisplay message={{ text: error, type: "error" }} />; // Use MessageDisplay
     if (!user || user.profile?.role !== 'patient') {
-        return <div className="alert alert-warning text-center m-4">Access Denied. You must be a Patient to view this page.</div>;
+        return <MessageDisplay message={{ text: "Access Denied. You must be a Patient to view this page.", type: "warning" }} />; // Use MessageDisplay
     }
 
     return (
@@ -216,41 +472,42 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string, data?: any) =>
             {showAddressModal && (
                 <CustomModal
                     title={currentAddress ? 'Edit Address' : 'Add New Address'}
-                    message=""
+                    message={
+                        <form>
+                            <div className="mb-3">
+                                <label htmlFor="addressLine1" className="form-label">Address Line 1:</label>
+                                <input type="text" className="form-control" id="addressLine1" name="address_line_1" value={addressFormData.address_line_1 || ''} onChange={handleAddressFormChange} required />
+                            </div>
+                            <div className="mb-3">
+                                <label htmlFor="addressLine2" className="form-label">Address Line 2 (Optional):</label>
+                                <input type="text" className="form-control" id="addressLine2" name="address_line_2" value={addressFormData.address_line_2 || ''} onChange={handleAddressFormChange} />
+                            </div>
+                            <div className="mb-3">
+                                <label htmlFor="city" className="form-label">City:</label>
+                                <input type="text" className="form-control" id="city" name="city" value={addressFormData.city || ''} onChange={handleAddressFormChange} required />
+                            </div>
+                            <div className="mb-3">
+                                <label htmlFor="state" className="form-label">State:</label>
+                                <input type="text" className="form-control" id="state" name="state" value={addressFormData.state || ''} onChange={handleAddressFormChange} required />
+                            </div>
+                            <div className="mb-3">
+                                <label htmlFor="zipCode" className="form-label">Zip Code:</label>
+                                <input type="text" className="form-control" id="zipCode" name="zip_code" value={addressFormData.zip_code || ''} onChange={handleAddressFormChange} required />
+                            </div>
+                            <div className="mb-3">
+                                <label htmlFor="label" className="form-label">Label (e.g., Home, Office):</label>
+                                <input type="text" className="form-control" id="label" name="label" value={addressFormData.label || ''} onChange={handleAddressFormChange} required />
+                            </div>
+                            <div className="form-check mb-3">
+                                <input type="checkbox" className="form-check-input" id="isDefault" name="is_default" checked={addressFormData.is_default || false} onChange={handleAddressFormChange} />
+                                <label className="form-check-label" htmlFor="isDefault">Set as Default Address</label>
+                            </div>
+                        </form>
+                    }
                     onConfirm={handleSaveAddress}
                     onCancel={() => setShowAddressModal(false)}
                     confirmText="Save Address"
                 >
-                    <form>
-                        <div className="mb-3">
-                            <label htmlFor="addressLine1" className="form-label">Address Line 1:</label>
-                            <input type="text" className="form-control" id="addressLine1" name="address_line_1" value={addressFormData.address_line_1 || ''} onChange={handleAddressFormChange} required />
-                        </div>
-                        <div className="mb-3">
-                            <label htmlFor="addressLine2" className="form-label">Address Line 2 (Optional):</label>
-                            <input type="text" className="form-control" id="addressLine2" name="address_line_2" value={addressFormData.address_line_2 || ''} onChange={handleAddressFormChange} />
-                        </div>
-                        <div className="mb-3">
-                            <label htmlFor="city" className="form-label">City:</label>
-                            <input type="text" className="form-control" id="city" name="city" value={addressFormData.city || ''} onChange={handleAddressFormChange} required />
-                        </div>
-                        <div className="mb-3">
-                            <label htmlFor="state" className="form-label">State:</label>
-                            <input type="text" className="form-control" id="state" name="state" value={addressFormData.state || ''} onChange={handleAddressFormChange} required />
-                        </div>
-                        <div className="mb-3">
-                            <label htmlFor="zipCode" className="form-label">Zip Code:</label>
-                            <input type="text" className="form-control" id="zipCode" name="zip_code" value={addressFormData.zip_code || ''} onChange={handleAddressFormChange} required />
-                        </div>
-                        <div className="mb-3">
-                            <label htmlFor="label" className="form-label">Label (e.g., Home, Office):</label>
-                            <input type="text" className="form-control" id="label" name="label" value={addressFormData.label || ''} onChange={handleAddressFormChange} required />
-                        </div>
-                        <div className="form-check mb-3">
-                            <input type="checkbox" className="form-check-input" id="isDefault" name="is_default" checked={addressFormData.is_default || false} onChange={handleAddressFormChange} />
-                            <label className="form-check-label" htmlFor="isDefault">Set as Default Address</label>
-                        </div>
-                    </form>
                 </CustomModal>
             )}
 
@@ -273,8 +530,8 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string, data?: any) =>
 };
 
 // Book Service Page (Patient)
-export const BookServicePage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, db, appId } = useAuth();
+export const BookServicePage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
     const [services, setServices] = useState<Service[]>([]);
     const [offers, setOffers] = useState<Offer[]>([]); // Added offers state
     const [addresses, setAddresses] = useState<Address[]>([]);
@@ -315,14 +572,14 @@ export const BookServicePage: React.FC<{ navigate: (page: string, data?: any) =>
             }
             try {
                 // Fetch Services from public/data
-                const servicesCollectionRef = collection(db, `artifacts/${appId}/services`);
+                const servicesCollectionRef = collection(db, `artifacts/${appId}/services`); // Corrected path
                 const servicesSnapshot = await getDocs(servicesCollectionRef);
                 const fetchedServices = servicesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Service[];
                 setServices(fetchedServices);
                 console.log("Fetched Services:", fetchedServices); // Debugging log
 
                 // Fetch Offers from public/data
-                const offersCollectionRef = collection(db, `artifacts/${appId}/offers`);
+                const offersCollectionRef = collection(db, `artifacts/${appId}/offers`); // Corrected path
                 const offersSnapshot = await getDocs(offersCollectionRef);
                 const fetchedOffers = offersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Offer[];
                 setOffers(fetchedOffers);
@@ -357,7 +614,7 @@ export const BookServicePage: React.FC<{ navigate: (page: string, data?: any) =>
 
     const handleServiceSelect = (service: Service) => {
         setSelectedService(service);
-        setBookingData(prev => ({ ...prev, service_id: service.id, estimated_cost: service.base_price, serviceName: service.name }));
+        setBookingData(prev => ({ ...prev, service_id: service.id, estimated_cost: service.base_price, serviceName: service.name })); // Use base_price
         setStep(2); // Move to address selection
     };
 
@@ -376,12 +633,12 @@ export const BookServicePage: React.FC<{ navigate: (page: string, data?: any) =>
         setLoading(true);
         setError(null);
         if (!db || !appId || !user?.uid) {
-            setError("Firestore not initialized or user not logged in.");
+            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" }); // Use setMessage
             setLoading(false);
             return;
         }
         if (!bookingData.service_id || !bookingData.address_id || !bookingData.requested_date || !bookingData.requested_time_slot) {
-            setError("Please fill all booking details.");
+            setMessage({ text: "Please fill all booking details.", type: "error" }); // Use setMessage
             setLoading(false);
             return;
         }
@@ -400,11 +657,12 @@ export const BookServicePage: React.FC<{ navigate: (page: string, data?: any) =>
                 created_at: serverTimestamp(),
                 updated_at: serverTimestamp(),
             });
-            alert('Appointment booked successfully! Waiting for doctor assignment.');
+            setMessage({ text: 'Appointment booked successfully! Waiting for doctor assignment.', type: 'success' }); // Use setMessage
             navigate('myBookings'); // Go to my bookings page
         } catch (err: any) {
             console.error("Error booking service:", err);
             setError(err.message);
+            setMessage({ text: `Error booking service: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -417,9 +675,9 @@ export const BookServicePage: React.FC<{ navigate: (page: string, data?: any) =>
             </div>
         </div>
     );
-    if (error) return <div className="alert alert-danger text-center m-4">{error}</div>;
+    if (error) return <MessageDisplay message={{ text: error, type: "error" }} />; // Use MessageDisplay
     if (!user || user.profile?.role !== 'patient') {
-        return <div className="alert alert-warning text-center m-4">Access Denied. You must be a Patient to view this page.</div>;
+        return <MessageDisplay message={{ text: "Access Denied. You must be a Patient to view this page.", type: "warning" }} />; // Use MessageDisplay
     }
 
     return (
@@ -436,10 +694,10 @@ export const BookServicePage: React.FC<{ navigate: (page: string, data?: any) =>
                                     <div className="carousel-inner rounded-3 shadow-sm">
                                         {offers.map((offer, index) => (
                                             <div className={`carousel-item ${index === 0 ? 'active' : ''}`} key={offer.id}>
-                                                <img src={offer.image_url} className="d-block w-100" alt={offer.title}
+                                                <img src={offer.image_url || "https://placehold.co/600x200/cccccc/000000?text=Offer"} className="d-block w-100" alt={offer.title} // Use offer.title
                                                      onError={(e: any) => { e.target.onerror = null; e.target.src="https://placehold.co/600x200/cccccc/000000?text=Offer"; }} />
                                                 <div className="carousel-caption d-none d-md-block bg-dark bg-opacity-75 rounded p-2">
-                                                    <h5>{offer.title}</h5>
+                                                    <h5>{offer.title}</h5> {/* Use offer.title */}
                                                     <p>{offer.description}</p>
                                                     {offer.link_url && <a href={offer.link_url} className="btn btn-sm btn-light mt-2">Learn More</a>}
                                                 </div>
@@ -474,7 +732,7 @@ export const BookServicePage: React.FC<{ navigate: (page: string, data?: any) =>
                                                 <h5 className="card-title">{service.name}</h5>
                                                 <p className="card-text text-muted flex-grow-1">{service.description}</p>
                                                 <div className="d-flex justify-content-between align-items-center mt-auto pt-3 border-top">
-                                                    <span className="fw-bold text-primary fs-5">₹{service.base_price.toFixed(2)}</span>
+                                                    <span className="fw-bold text-primary fs-5">₹{service.base_price.toFixed(2)}</span> {/* Use base_price */}
                                                     <button
                                                         className="btn btn-primary"
                                                         onClick={() => handleServiceSelect(service)}
@@ -494,7 +752,7 @@ export const BookServicePage: React.FC<{ navigate: (page: string, data?: any) =>
                 {step === 2 && (
                     <>
                         <h4 className="h5 fw-bold mb-3">Step 2: Select an Address</h4>
-                        {selectedService && <p>You selected: <strong>{selectedService.name}</strong> (₹{selectedService.base_price.toFixed(2)})</p>}
+                        {selectedService && <p>You selected: <strong>{selectedService.name}</strong> (₹{selectedService.base_price.toFixed(2)})</p>} {/* Use base_price */}
                         {addresses.length === 0 ? (
                             <p className="text-muted text-center">No addresses saved. Please add one in "My Addresses" first.</p>
                         ) : (
@@ -602,8 +860,8 @@ export const BookServicePage: React.FC<{ navigate: (page: string, data?: any) =>
 };
 
 // My Bookings Page (Patient)
-export const MyBookingsPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, db, appId } = useAuth();
+export const MyBookingsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
     const [appointments, setAppointments] = useState<Appointment[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -636,27 +894,33 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string, data?: any) => 
             const snapshot = await getDocs(q);
             let fetchedAppointments: Appointment[] = [];
 
+            // Fetch all doctors and services once to reduce reads in loop
+            const doctorsMap = new Map<string, UserProfile>();
+            const servicesMap = new Map<string, Service>();
+
+            const allUsersSnapshot = await getDocs(collectionGroup(db, 'users'));
+            allUsersSnapshot.docs.forEach(docSnap => {
+                const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                const pathSegments = docSnap.ref.path.split('/');
+                if (pathSegments[1] === appId) { // Ensure it belongs to this app's structure
+                    doctorsMap.set(docSnap.id, profileData);
+                }
+            });
+
+            const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // Corrected path
+            servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
+
+
             for (const docSnap of snapshot.docs) {
                 const apptData = docSnap.data() as Appointment;
-                let serviceName = 'Unknown Service';
-                let doctorName = 'Unassigned';
+                let serviceName = servicesMap.get(apptData.service_id)?.name || 'Unknown Service';
+                let doctorName = apptData.doctor_id ? (doctorsMap.get(apptData.doctor_id)?.full_name || doctorsMap.get(apptData.doctor_id)?.email || 'Unknown Doctor') : 'Unassigned';
                 let addressDetails: Address | undefined;
 
-                // Fetch service details
-                const serviceDocRef = doc(db, `artifacts/${appId}/services`, apptData.service_id); // Corrected path
-                const serviceSnap = await getDoc(serviceDocRef);
-                serviceName = serviceSnap.exists() ? (serviceSnap.data() as Service).name : serviceName;
-
-                // Fetch doctor details if assigned
-                if (apptData.doctor_id) {
-                    const doctorUserDocRef = doc(db, `artifacts/${appId}/users/${apptData.doctor_id}/users`, apptData.doctor_id);
-                    const doctorProfileSnap = await getDoc(doctorUserDocRef);
-                    doctorName = doctorProfileSnap.exists() ? (doctorProfileSnap.data() as UserProfile).full_name || (doctorProfileSnap.data() as UserProfile).email : doctorName;
-                }
-
-                // Fetch address details
+                // Fetch address details (specific to the patient)
                 if (apptData.address_id) {
-                    const addressDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/addresses`, apptData.address_id);
+                    const addressesCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/addresses`);
+                    const addressDocRef = doc(addressesCollectionRef, apptData.address_id);
                     const addressSnap = await getDoc(addressDocRef);
                     if (addressSnap.exists()) {
                         addressDetails = addressSnap.data() as Address;
@@ -688,7 +952,7 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string, data?: any) => 
 
     const handleCancelBooking = async () => {
         if (!showCancelModal?.id || !db || !appId || !user?.uid) {
-            setError("Missing appointment ID or Firebase not initialized.");
+            setMessage({ text: "Missing appointment ID or Firebase not initialized.", type: "error" }); // Use setMessage
             return;
         }
         setLoading(true);
@@ -701,11 +965,12 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string, data?: any) => 
                 updated_at: serverTimestamp(),
             });
             setShowCancelModal(null);
-            alert('Appointment cancelled successfully.');
+            setMessage({ text: 'Appointment cancelled successfully.', type: 'success' }); // Use setMessage
             fetchMyBookings();
         } catch (err: any) {
             console.error("Error cancelling appointment:", err);
             setError(err.message);
+            setMessage({ text: `Error cancelling appointment: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -714,7 +979,7 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string, data?: any) => 
     const handleRescheduleClick = (appointment: Appointment) => {
         // This would ideally navigate to a booking page pre-filled with service/address
         // and allow selecting new date/time. For now, we'll just alert.
-        alert(`Reschedule functionality for ${appointment.serviceName} on ${appointment.requested_date} at ${appointment.requested_time_slot} is coming soon!`);
+        setMessage({ text: `Reschedule functionality for ${appointment.serviceName} on ${appointment.requested_date} at ${appointment.requested_time_slot} is coming soon!`, type: "info" }); // Use setMessage
         // You might navigate to BookServicePage with pre-filled data:
         // navigate('bookService', { serviceId: appointment.service_id, addressId: appointment.address_id, isReschedule: true, oldAppointmentId: appointment.id });
     };
@@ -727,7 +992,7 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string, data?: any) => 
 
     const handleSubmitFeedback = async () => {
         if (!showFeedbackModal?.id || !db || !appId || !user?.uid || !showFeedbackModal.doctor_id || feedbackRating === 0) {
-            setError("Missing data for feedback or Firebase not initialized.");
+            setMessage({ text: "Missing data for feedback or Firebase not initialized.", type: "error" }); // Use setMessage
             return;
         }
         setLoading(true);
@@ -770,11 +1035,12 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string, data?: any) => 
             await batch.commit();
 
             setShowFeedbackModal(null);
-            alert('Feedback submitted successfully!');
+            setMessage({ text: 'Feedback submitted successfully!', type: 'success' }); // Use setMessage
             fetchMyBookings(); // Refresh bookings to reflect feedback status
         } catch (err: any) {
             console.error("Error submitting feedback:", err);
             setError(err.message);
+            setMessage({ text: `Error submitting feedback: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -788,9 +1054,9 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string, data?: any) => 
             </div>
         </div>
     );
-    if (error) return <div className="alert alert-danger text-center m-4">{error}</div>;
+    if (error) return <MessageDisplay message={{ text: error, type: "error" }} />; // Use MessageDisplay
     if (!user || user.profile?.role !== 'patient') {
-        return <div className="alert alert-warning text-center m-4">Access Denied. You must be a Patient to view this page.</div>;
+        return <MessageDisplay message={{ text: "Access Denied. You must be a Patient to view this page.", type: "warning" }} />; // Use MessageDisplay
     }
 
     return (
@@ -864,13 +1130,14 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string, data?: any) => 
                     onCancel={() => setShowCancelModal(null)}
                     confirmText="Yes, Cancel"
                     cancelText="No, Keep"
-                />
+                >
+                </CustomModal>
             )}
 
             {showFeedbackModal && (
                 <CustomModal
                     title={`Give Feedback for ${showFeedbackModal.serviceName}`}
-                    message={`How was your experience with Dr. ${showFeedbackModal.doctorName}?`}
+                    message="" // Message is now rendered within the modal body
                     onConfirm={handleSubmitFeedback}
                     onCancel={() => setShowFeedbackModal(null)}
                     confirmText="Submit Feedback"
@@ -909,8 +1176,8 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string, data?: any) => 
 };
 
 // Appointment Status Page
-export const AppointmentStatusPage: React.FC<{ navigate: (page: string, data?: any) => void; appointment?: Appointment }> = ({ navigate, appointment: initialAppointment }) => {
-    const { user, db, appId } = useAuth();
+export const AppointmentStatusPage: React.FC<{ navigate: (page: string | number, data?: any) => void; appointment?: Appointment }> = ({ navigate, appointment: initialAppointment }) => { // MODIFIED: navigate type
+    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
     const [appointment, setAppointment] = useState<Appointment | undefined>(initialAppointment);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -942,7 +1209,7 @@ export const AppointmentStatusPage: React.FC<{ navigate: (page: string, data?: a
                     let addressDetails: Address | undefined;
 
                     // Fetch service details
-                    const serviceDocRef = doc(db, `artifacts/${appId}/services`, apptData.service_id);
+                    const serviceDocRef = doc(db, `artifacts/${appId}/services`, apptData.service_id); // Corrected path
                     const serviceSnap = await getDoc(serviceDocRef);
                     serviceName = serviceSnap.exists() ? (serviceSnap.data() as Service).name : serviceName;
 
@@ -987,7 +1254,7 @@ export const AppointmentStatusPage: React.FC<{ navigate: (page: string, data?: a
 
     const handleReschedule = async () => {
         if (!appointment?.id || !db || !appId || !user?.uid || !rescheduleDate || !rescheduleTimeSlot) {
-            setError("Missing data for reschedule or Firebase not initialized.");
+            setMessage({ text: "Missing data for reschedule or Firebase not initialized.", type: "error" }); // Use setMessage
             return;
         }
         setLoading(true);
@@ -1001,11 +1268,12 @@ export const AppointmentStatusPage: React.FC<{ navigate: (page: string, data?: a
                 updated_at: serverTimestamp(),
             });
             setShowRescheduleModal(false);
-            alert('Appointment rescheduled successfully!');
+            setMessage({ text: 'Appointment rescheduled successfully!', type: 'success' }); // Use setMessage
             navigate('myBookings'); // Go back to my bookings
         } catch (err: any) {
             console.error("Error rescheduling appointment:", err);
             setError(err.message);
+            setMessage({ text: `Error rescheduling appointment: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -1013,7 +1281,7 @@ export const AppointmentStatusPage: React.FC<{ navigate: (page: string, data?: a
 
     const handleCancel = async () => {
         if (!appointment?.id || !db || !appId || !user?.uid) {
-            setError("Missing appointment ID or Firebase not initialized.");
+            setMessage({ text: "Missing appointment ID or Firebase not initialized.", type: "error" }); // Use setMessage
             return;
         }
         setLoading(true);
@@ -1026,11 +1294,12 @@ export const AppointmentStatusPage: React.FC<{ navigate: (page: string, data?: a
                 updated_at: serverTimestamp(),
             });
             setShowCancelModal(false);
-            alert('Appointment cancelled successfully.');
+            setMessage({ text: 'Appointment cancelled successfully.', type: 'success' }); // Use setMessage
             navigate('myBookings'); // Go back to my bookings
         } catch (err: any) {
             console.error("Error cancelling appointment:", err);
             setError(err.message);
+            setMessage({ text: `Error cancelling appointment: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -1043,11 +1312,11 @@ export const AppointmentStatusPage: React.FC<{ navigate: (page: string, data?: a
             </div>
         </div>
     );
-    if (error) return <div className="alert alert-danger text-center m-4">{error}</div>;
+    if (error) return <MessageDisplay message={{ text: error, type: "error" }} />; // Use MessageDisplay
     if (!user || user.profile?.role !== 'patient') {
-        return <div className="alert alert-warning text-center m-4">Access Denied. You must be a Patient to view this page.</div>;
+        return <MessageDisplay message={{ text: "Access Denied. You must be a Patient to view this page.", type: "warning" }} />; // Use MessageDisplay
     }
-    if (!appointment) return <div className="alert alert-info text-center m-4">No appointment data provided or found.</div>;
+    if (!appointment) return <MessageDisplay message={{ text: "No appointment data provided or found.", type: "info" }} />; // Use MessageDisplay
 
     return (
         <div className="container py-4">
@@ -1079,10 +1348,10 @@ export const AppointmentStatusPage: React.FC<{ navigate: (page: string, data?: a
                     <strong>Payment Status:</strong> <span className={`badge ${appointment.payment_status === 'paid' ? 'bg-success' : 'bg-secondary'}`}>{appointment.payment_status.toUpperCase()}</span>
                 </div>
 
-                <div className="d-flex justify-content-center mt-4">
+                <div className="d-flex justify-content-center mt-4 flex-wrap gap-2"> {/* Added flex-wrap gap-2 */}
                     {['pending_assignment', 'assigned', 'confirmed'].includes(appointment.status) && (
                         <>
-                            <button className="btn btn-warning me-2" onClick={() => setShowRescheduleModal(true)}>Reschedule</button>
+                            <button className="btn btn-warning" onClick={() => setShowRescheduleModal(true)}>Reschedule</button>
                             <button className="btn btn-danger" onClick={() => setShowCancelModal(true)}>Cancel</button>
                         </>
                     )}
@@ -1098,7 +1367,7 @@ export const AppointmentStatusPage: React.FC<{ navigate: (page: string, data?: a
             {showRescheduleModal && (
                 <CustomModal
                     title="Reschedule Appointment"
-                    message=""
+                    message="" // Message is now rendered within the modal body
                     onConfirm={handleReschedule}
                     onCancel={() => setShowRescheduleModal(false)}
                     confirmText="Confirm Reschedule"
@@ -1141,7 +1410,8 @@ export const AppointmentStatusPage: React.FC<{ navigate: (page: string, data?: a
                     onCancel={() => setShowCancelModal(false)}
                     confirmText="Yes, Cancel"
                     cancelText="No, Keep"
-                />
+                >
+                </CustomModal>
             )}
 
             <div className="d-flex justify-content-center mt-4">
@@ -1152,7 +1422,7 @@ export const AppointmentStatusPage: React.FC<{ navigate: (page: string, data?: a
 };
 
 // Payment Page (Patient)
-export const PaymentPage: React.FC<{ navigate: (page: string, data?: any) => void; appointmentId: string; amount: number }> = ({ navigate, appointmentId, amount }) => {
+export const PaymentPage: React.FC<{ navigate: (page: string | number, data?: any) => void; appointmentId: string; amount: number }> = ({ navigate, appointmentId, amount }) => { // MODIFIED: navigate type
     const { user, db, appId, message, setMessage } = useAuth();
     const [loading, setLoading] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState('');
@@ -1189,15 +1459,35 @@ export const PaymentPage: React.FC<{ navigate: (page: string, data?: any) => voi
             });
 
             // 2. Record the payment
-            const paymentsCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/payments`);
-            batch.set(doc(paymentsCollectionRef), {
+            // Note: Your Payment type has 'currency', 'payment_gateway_transaction_id', 'platform_fee_amount', 'doctor_fee_amount', 'admin_fee_amount', 'transaction_date', 'recorded_by'
+            // Let's fetch the fee configuration and apply it.
+            const feeConfigDocRef = doc(db, `artifacts/${appId}/public/data/fee_configurations`, 'current_config');
+            const feeConfigSnap = await getDoc(feeConfigDocRef);
+            let platformFeePercentage = 0.15; // Default to 15%
+            let doctorSharePercentage = 0.70; // Default to 70%
+            let adminFeePercentage = 0.15; // Default to 15%
+
+            if (feeConfigSnap.exists()) {
+                const config = feeConfigSnap.data() as FeeConfiguration;
+                platformFeePercentage = config.platform_fee_percentage;
+                doctorSharePercentage = config.doctor_share_percentage;
+                adminFeePercentage = config.admin_fee_percentage;
+            }
+
+            const paymentsCollectionRef = collection(db, `artifacts/${appId}/public/data/payments`); // Central payments collection
+            batch.set(doc(paymentsCollectionRef), { // Use set with doc() for auto-ID
                 patient_id: user.uid,
                 appointment_id: appointmentId,
                 amount: amount,
+                currency: 'INR', // Assuming INR as per your types.ts
                 payment_method: paymentMethod,
-                transaction_id: `txn_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`, // Simple unique ID
-                status: 'completed',
-                created_at: serverTimestamp(),
+                payment_gateway_transaction_id: `txn_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`, // Simple unique ID
+                status: 'successful',
+                platform_fee_amount: amount* platformFeePercentage,
+                doctor_fee_amount: amount* doctorSharePercentage,
+                admin_fee_amount: amount * adminFeePercentage,
+                transaction_date: serverTimestamp(),
+                // recorded_by is optional, can be added if an admin records it
             });
 
             await batch.commit();
@@ -1274,7 +1564,7 @@ export const PaymentPage: React.FC<{ navigate: (page: string, data?: any) => voi
 };
 
 // Feedback Page (Patient)
-export const FeedbackPage: React.FC<{ navigate: (page: string, data?: any) => void; appointmentId: string; doctorId: string }> = ({ navigate, appointmentId, doctorId }) => {
+export const FeedbackPage: React.FC<{ navigate: (page: string | number, data?: any) => void; appointmentId: string; doctorId: string }> = ({ navigate, appointmentId, doctorId }) => { // MODIFIED: navigate type
     const { user, db, appId, message, setMessage } = useAuth();
     const [loading, setLoading] = useState(false);
     const [rating, setRating] = useState(0);
@@ -1385,7 +1675,7 @@ export const FeedbackPage: React.FC<{ navigate: (page: string, data?: any) => vo
 };
 
 // Help & FAQ Page (Patient)
-export const HelpFAQPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
+export const HelpFAQPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
     return (
         <div className="container py-4">
             <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
@@ -1452,6 +1742,43 @@ export const HelpFAQPage: React.FC<{ navigate: (page: string, data?: any) => voi
                             </div>
                         </div>
                     </div>
+                    {/* NEW FAQ ITEMS */}
+                     <div className="accordion-item">
+                        <h2 className="accordion-header" id="headingSix">
+                            <button className="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSix" aria-expanded="false" aria-controls="collapseSix">
+                                Where can I view my prescriptions?
+                            </button>
+                        </h2>
+                        <div id="collapseSix" className="accordion-collapse collapse" aria-labelledby="headingSix" data-bs-parent="#faqAccordion">
+                            <div className="accordion-body">
+                                You can view all your prescribed medications in the "My Prescriptions" section from your dashboard.
+                            </div>
+                        </div>
+                    </div>
+                    <div className="accordion-item">
+                        <h2 className="accordion-header" id="headingSeven">
+                            <button className="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSeven" aria-expanded="false" aria-controls="collapseSeven">
+                                How do I access my health records?
+                            </button>
+                        </h2>
+                        <div id="collapseSeven" className="accordion-collapse collapse" aria-labelledby="headingSeven" data-bs-parent="#faqAccordion">
+                            <div className="accordion-body">
+                                Your health records, including diagnoses and test results, are available under "My Health Records" in your dashboard.
+                            </div>
+                        </div>
+                    </div>
+                    <div className="accordion-item">
+                        <h2 className="accordion-header" id="headingEight">
+                            <button className="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseEight" aria-expanded="false" aria-controls="collapseEight">
+                                Can I review past consultation notes?
+                            </button>
+                        </h2>
+                        <div id="collapseEight" className="accordion-collapse collapse" aria-labelledby="headingEight" data-bs-parent="#faqAccordion">
+                            <div className="accordion-body">
+                                Yes, detailed notes from your past consultations can be found in the "My Consultations" section of your dashboard.
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div className="d-flex justify-content-center mt-4">
@@ -1462,205 +1789,355 @@ export const HelpFAQPage: React.FC<{ navigate: (page: string, data?: any) => voi
 };
 
 
-// Patient Dashboard Component
-export const PatientDashboard: React.FC<DashboardProps> = ({ navigate, currentPage, pageData }) => {
-    const { user, db, appId } = useAuth();
-    const [latestAppointment, setLatestAppointment] = useState<Appointment | null>(null);
-    const [upcomingAppointmentsCount, setUpcomingAppointmentsCount] = useState<number>(0);
-    const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
-    const [loadingDashboard, setLoadingDashboard] = useState(true);
-    const [errorDashboard, setErrorDashboard] = useState<string | null>(null);
+// --- NEW COMPONENTS FOR PATIENT HEALTH DATA ---
+
+// My Prescriptions Page
+export const MyPrescriptionsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
+    const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        const fetchDashboardData = async () => {
-            setLoadingDashboard(true);
-            setErrorDashboard(null);
+        const fetchPrescriptions = async () => {
+            setLoading(true);
+            setError(null);
             if (!db || !appId || !user?.uid) {
-                setErrorDashboard("Firestore not initialized or user not logged in.");
-                setLoadingDashboard(false);
+                setError("Firestore not initialized or user not logged in.");
+                setLoading(false);
                 return;
             }
             try {
-                // Fetch latest appointment
-                const appointmentsCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/appointments`);
-                const qLatest = query(
-                    appointmentsCollectionRef,
-                    where('status', 'in', ['pending_assignment', 'assigned', 'confirmed', 'on_the_way', 'arrived', 'service_started']),
-                    // orderBy('requested_date', 'asc'), // Removed orderBy to avoid index issues
-                    // orderBy('requested_time_slot', 'asc'), // Removed orderBy to avoid index issues
-                    // limit(1) // Removed limit to fetch all and sort in memory
-                );
-                const latestSnapshot = await getDocs(qLatest);
-                const upcomingAppts = latestSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Appointment[];
+                // Prescriptions are stored under the patient's user document
+                const prescriptionsCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/prescriptions`);
+                const q = query(prescriptionsCollectionRef, where('patient_id', '==', user.uid));
+                const snapshot = await getDocs(q);
+                let fetchedPrescriptions: Prescription[] = [];
 
-                // Sort in memory
-                upcomingAppts.sort((a, b) => {
-                    const dateA = new Date(`${a.requested_date} ${a.requested_time_slot.split(' ')[0]}`);
-                    const dateB = new Date(`${b.requested_date} ${b.requested_time_slot.split(' ')[0]}`);
-                    return dateA.getTime() - dateB.getTime();
+                // Fetch all doctors once to enrich prescription data
+                const doctorsMap = new Map<string, UserProfile>();
+                const doctorsSnapshot = await getDocs(query(collectionGroup(db, 'users'), where('role', '==', 'doctor')));
+                doctorsSnapshot.docs.forEach(docSnap => {
+                    const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) {
+                        doctorsMap.set(docSnap.id, profileData);
+                    }
                 });
 
-                if (upcomingAppts.length > 0) {
-                    const latestAppt = upcomingAppts[0];
-                    let serviceName = 'Unknown Service';
-                    let doctorName = 'Unassigned';
-
-                    // Fetch service details
-                    const serviceDocRef = doc(db, `artifacts/${appId}/services`, latestAppt.service_id);
-                    const serviceSnap = await getDoc(serviceDocRef);
-                    serviceName = serviceSnap.exists() ? (serviceSnap.data() as Service).name : serviceName;
-
-                    // Fetch doctor details if assigned
-                    if (latestAppt.doctor_id) {
-                        const doctorUserDocRef = doc(db, `artifacts/${appId}/users/${latestAppt.doctor_id}/users`, latestAppt.doctor_id);
-                        const doctorProfileSnap = await getDoc(doctorUserDocRef);
-                        doctorName = doctorProfileSnap.exists() ? (doctorProfileSnap.data() as UserProfile).full_name || (doctorProfileSnap.data() as UserProfile).email : doctorName;
-                    }
-
-                    setLatestAppointment({
-                        ...latestAppt,
-                        serviceName,
-                        doctorName,
-                    });
-                } else {
-                    setLatestAppointment(null);
+                for (const docSnap of snapshot.docs) {
+                    const prescriptionData = docSnap.data() as Prescription;
+                    const doctorName = doctorsMap.get(prescriptionData.doctor_id)?.full_name || doctorsMap.get(prescriptionData.doctor_id)?.email || 'Unknown Doctor';
+                    fetchedPrescriptions.push({ ...prescriptionData, id: docSnap.id, doctorName });
                 }
-
-                setUpcomingAppointmentsCount(upcomingAppts.length);
-
-                // Fetch unread notifications count (placeholder logic)
-                // In a real app, you'd have a 'notifications' collection with a 'read' status
-                const notificationsCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/notifications`);
-                const qNotifications = query(notificationsCollectionRef, where('read', '==', false));
-                const notificationsSnapshot = await getDocs(qNotifications);
-                setUnreadNotificationsCount(notificationsSnapshot.size);
-
+                setPrescriptions(fetchedPrescriptions);
             } catch (err: any) {
-                console.error("Error fetching patient dashboard data:", err);
-                setErrorDashboard(err.message);
+                console.error("Error fetching prescriptions:", err);
+                setError(err.message);
+                setMessage({ text: `Error fetching prescriptions: ${err.message}`, type: "error" }); // Use setMessage
             } finally {
-                setLoadingDashboard(false);
+                setLoading(false);
             }
         };
 
-        if (user && db && appId && currentPage === 'dashboard') {
-            fetchDashboardData();
+        if (user && db && appId) {
+            fetchPrescriptions();
         }
-    }, [user, db, appId, currentPage]);
+    }, [user, db, appId]);
 
-
-    const renderPatientPage = () => {
-        switch (currentPage) {
-            case 'dashboard':
-                if (loadingDashboard) return (
-                    <div className="d-flex justify-content-center align-items-center min-vh-100">
-                        <div className="text-center p-5">
-                            <LoadingSpinner /><p className="mt-3 text-muted">Loading dashboard...</p>
-                        </div>
-                    </div>
-                );
-                if (errorDashboard) return <MessageDisplay message={{ text: errorDashboard, type: "error" }} />;
-                if (!user || user.profile?.role !== 'patient') {
-                    return <MessageDisplay message={{ text: "Access Denied. You must be a Patient to view this page.", type: "error" }} />;
-                }
-
-                return (
-                    <div className="container py-4">
-                        <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
-                            <h2 className="h3 fw-bold text-success mb-4 text-center">Patient Dashboard</h2>
-
-                            <div className="row g-4 mb-5">
-                                <div className="col-md-4">
-                                    <div className="card h-100 bg-primary text-white shadow-sm rounded-3">
-                                        <div className="card-body d-flex flex-column justify-content-between">
-                                            <h5 className="card-title fw-bold">Book New Service</h5>
-                                            <p className="card-text">Quickly schedule your next dental appointment.</p>
-                                            <button className="btn btn-light text-primary mt-3" onClick={() => navigate('bookService')}>Book Now</button>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4">
-                                    <div className="card h-100 bg-info text-white shadow-sm rounded-3">
-                                        <div className="card-body d-flex flex-column justify-content-between">
-                                            <h5 className="card-title fw-bold">My Bookings</h5>
-                                            <p className="card-text">View and manage your upcoming and past appointments.</p>
-                                            <p className="card-text fs-4 fw-bold">{upcomingAppointmentsCount} Upcoming</p>
-                                            <button className="btn btn-light text-info mt-3" onClick={() => navigate('myBookings')}>View Bookings</button>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4">
-                                    <div className="card h-100 bg-secondary text-white shadow-sm rounded-3">
-                                        <div className="card-body d-flex flex-column justify-content-between">
-                                            <h5 className="card-title fw-bold">My Addresses</h5>
-                                            <p className="card-text">Manage your saved addresses for quick booking.</p>
-                                            <button className="btn btn-light text-secondary mt-3" onClick={() => navigate('myAddresses')}>Manage Addresses</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="row g-4 mb-5">
-                                <div className="col-md-6">
-                                    <div className="card h-100 shadow-sm rounded-3">
-                                        <div className="card-body">
-                                            <h5 className="card-title fw-bold text-primary">Latest Appointment Status</h5>
-                                            {latestAppointment ? (
-                                                <>
-                                                    <p className="card-text mb-1"><strong>Service:</strong> {latestAppointment.serviceName}</p>
-                                                    <p className="card-text mb-1"><strong>Date:</strong> {latestAppointment.requested_date}</p>
-                                                    <p className="card-text mb-1"><strong>Time:</strong> {latestAppointment.requested_time_slot}</p>
-                                                    <p className="card-text mb-1"><strong>Doctor:</strong> {latestAppointment.doctorName}</p>
-                                                    <p className="card-text mb-3"><strong>Status:</strong> <span className={`badge ${getStatusBadgeClass(latestAppointment.status)}`}>{latestAppointment.status.replace(/_/g, ' ').toUpperCase()}</span></p>
-                                                    <button className="btn btn-outline-primary" onClick={() => navigate('appointmentStatus', { appointment: latestAppointment })}>View Details</button>
-                                                </>
-                                            ) : (
-                                                <p className="text-muted">No upcoming appointments. Book one now!</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-6">
-                                    <div className="card h-100 shadow-sm rounded-3">
-                                        <div className="card-body">
-                                            <h5 className="card-title fw-bold text-success">Notifications & Announcements</h5>
-                                            <ul className="list-group list-group-flush">
-                                                <li className="list-group-item d-flex justify-content-between align-items-center">
-                                                    Unread Notifications
-                                                    <span className="badge bg-danger rounded-pill">{unreadNotificationsCount}</span>
-                                                </li>
-                                                <li className="list-group-item">Your next appointment on {latestAppointment?.requested_date || 'N/A'} is {latestAppointment?.status.replace(/_/g, ' ') || 'not yet confirmed'}.</li>
-                                                <li className="list-group-item">New offers available! Check out our 'Special Offers' section.</li>
-                                            </ul>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                );
-            case 'bookService':
-                return <BookServicePage navigate={navigate} />;
-            case 'myBookings':
-                return <MyBookingsPage navigate={navigate} />;
-            case 'myAddresses': // Corrected: This is the address management page
-                return <MyAddressesPage navigate={navigate} />;
-            case 'appointmentStatus':
-                return <AppointmentStatusPage navigate={navigate} appointment={pageData?.appointment} />;
-            case 'payment':
-                return <PaymentPage navigate={navigate} appointmentId={pageData.appointmentId} amount={pageData.amount} />;
-            case 'feedback':
-                return <FeedbackPage navigate={navigate} appointmentId={pageData.appointmentId} doctorId={pageData.doctorId} />;
-            case 'helpFAQ':
-                return <HelpFAQPage navigate={navigate} />;
-            default:
-                return <MessageDisplay message={{ text: "Page not found.", type: "error" }} />;
-        }
-    };
+    if (loading) return (
+        <div className="d-flex justify-content-center align-items-center min-vh-100">
+            <div className="text-center p-5">
+                <LoadingSpinner /><p className="mt-3 text-muted">Loading prescriptions...</p>
+            </div>
+        </div>
+    );
+    if (error) return <MessageDisplay message={{ text: error, type: "error" }} />; // Use MessageDisplay
 
     return (
-        <div className="container py-4">
-            {renderPatientPage()}
+        <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
+            <h2 className="h3 fw-bold text-primary mb-4 text-center">My Prescriptions</h2>
+            {prescriptions.length === 0 ? (
+                <p className="text-muted text-center">No prescriptions found.</p>
+            ) : (
+                <div className="table-responsive">
+                    <table className="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Prescribed Date</th>
+                                <th>Expires Date</th>
+                                <th>Prescribed By</th>
+                                <th>Medications</th>
+                                <th>Actions</th> {/* NEW: Actions column */}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {prescriptions.map(p => (
+                                <tr key={p.id}>
+                                    <td>{p.prescribed_date}</td>
+                                    <td>{p.expires_date || 'N/A'}</td>
+                                    <td>{p.doctorName}</td>
+                                    <td>
+                                        {p.medications && p.medications.length > 0 ? (
+                                            <ul className="list-unstyled mb-0">
+                                                {p.medications.map((med, idx) => (
+                                                    <li key={idx}>
+                                                        <strong>{med.medication_name}:</strong> {med.dosage}, {med.frequency}. <em>{med.instructions}</em>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        ) : (
+                                            'No medications listed.'
+                                        )}
+                                    </td>
+                                    <td>
+                                        <button
+                                            className="btn btn-sm btn-outline-primary"
+                                            onClick={() => navigate('prescriptionViewer', { patientId: user?.uid, prescriptionId: p.id })}
+                                        >
+                                            View
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+            <div className="d-flex justify-content-center mt-4">
+                <button className="btn btn-link" onClick={() => navigate('dashboard')}>Back to Dashboard</button>
+            </div>
+        </div>
+    );
+};
+
+// My Health Records Page
+export const MyHealthRecordsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
+    const [healthRecords, setHealthRecords] = useState<HealthRecord[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchHealthRecords = async () => {
+            setLoading(true);
+            setError(null);
+            if (!db || !appId || !user?.uid) {
+                setError("Firestore not initialized or user not logged in.");
+                setLoading(false);
+                return;
+            }
+            try {
+                // Health records are stored under the patient's user document
+                const healthRecordsCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/health_records`);
+                const q = query(healthRecordsCollectionRef, where('patient_id', '==', user.uid));
+                const snapshot = await getDocs(q);
+                let fetchedRecords: HealthRecord[] = [];
+
+                // Fetch all doctors once to enrich data
+                const doctorsMap = new Map<string, UserProfile>();
+                const doctorsSnapshot = await getDocs(query(collectionGroup(db, 'users'), where('role', '==', 'doctor')));
+                doctorsSnapshot.docs.forEach(docSnap => {
+                    const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) {
+                        doctorsMap.set(docSnap.id, profileData);
+                    }
+                });
+
+                for (const docSnap of snapshot.docs) {
+                    const recordData = docSnap.data() as HealthRecord;
+                    const doctorName = recordData.doctor_id ? (doctorsMap.get(recordData.doctor_id)?.full_name || doctorsMap.get(recordData.doctor_id)?.email || 'Unknown Doctor') : 'Patient Added';
+                    fetchedRecords.push({ ...recordData, id: docSnap.id, doctorName });
+                }
+                setHealthRecords(fetchedRecords);
+            } catch (err: any) {
+                console.error("Error fetching health records:", err);
+                setError(err.message);
+                setMessage({ text: `Error fetching health records: ${err.message}`, type: "error" }); // Use setMessage
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (user && db && appId) {
+            fetchHealthRecords();
+        }
+    }, [user, db, appId]);
+
+    if (loading) return (
+        <div className="d-flex justify-content-center align-items-center min-vh-100">
+            <div className="text-center p-5">
+                <LoadingSpinner /><p className="mt-3 text-muted">Loading health records...</p>
+            </div>
+        </div>
+    );
+    if (error) return <MessageDisplay message={{ text: error, type: "error" }} />; // Use MessageDisplay
+
+    return (
+        <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
+            <h2 className="h3 fw-bold text-primary mb-4 text-center">My Health Records</h2>
+            {healthRecords.length === 0 ? (
+                <p className="text-muted text-center">No health records found.</p>
+            ) : (
+                <div className="table-responsive">
+                    <table className="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Title</th>
+                                <th>Description</th>
+                                <th>Added By</th>
+                                <th>Attachment</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {healthRecords.map(r => (
+                                <tr key={r.id}>
+                                    <td>{r.record_date}</td>
+                                    <td>{r.record_type.replace(/_/g, ' ').toUpperCase()}</td>
+                                    <td>{r.title || 'N/A'}</td>
+                                    <td>{r.description}</td>
+                                    <td>{r.doctorName}</td>
+                                    <td>
+                                        {r.attachment_url ? (
+                                            <a href={r.attachment_url} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline-primary">View</a>
+                                        ) : 'N/A'}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+            <div className="d-flex justify-content-center mt-4">
+                <button className="btn btn-link" onClick={() => navigate('dashboard')}>Back to Dashboard</button>
+            </div>
+        </div>
+    );
+};
+
+// My Consultations Page
+export const MyConsultationsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
+    const [consultations, setConsultations] = useState<Consultation[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchConsultations = async () => {
+            setLoading(true);
+            setError(null);
+            if (!db || !appId || !user?.uid) {
+                setError("Firestore not initialized or user not logged in.");
+                setLoading(false);
+                return;
+            }
+            try {
+                // Consultations are stored under the patient's user document
+                const consultationsCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/consultations`);
+                const q = query(consultationsCollectionRef, where('patient_id', '==', user.uid));
+                const snapshot = await getDocs(q);
+                let fetchedConsultations: Consultation[] = [];
+
+                // Fetch all doctors and services once to enrich data
+                const doctorsMap = new Map<string, UserProfile>();
+                const doctorsSnapshot = await getDocs(query(collectionGroup(db, 'users'), where('role', '==', 'doctor')));
+                doctorsSnapshot.docs.forEach(docSnap => {
+                    const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) {
+                        doctorsMap.set(docSnap.id, profileData);
+                    }
+                });
+
+                const servicesMap = new Map<string, Service>();
+                const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // Corrected path
+                servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
+
+                for (const docSnap of snapshot.docs) {
+                    const consultationData = docSnap.data() as Consultation;
+                    const doctorName = doctorsMap.get(consultationData.doctor_id)?.full_name || doctorsMap.get(consultationData.doctor_id)?.email || 'Unknown Doctor';
+
+                    let serviceName = 'N/A';
+                    if (consultationData.appointment_id) {
+                        // To get service name, we need to fetch the appointment first
+                        // NOTE: This is a nested read inside a loop. For very large datasets,
+                        // consider pre-fetching all appointments relevant to the patient
+                        // or optimizing the data model to store serviceName directly in consultation.
+                        const appointmentDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/appointments`, consultationData.appointment_id);
+                        const appointmentSnap = await getDoc(appointmentDocRef);
+                        if (appointmentSnap.exists()) {
+                            const serviceId = (appointmentSnap.data() as Appointment).service_id;
+                            serviceName = servicesMap.get(serviceId)?.name || 'Unknown Service';
+                        }
+                    }
+
+                    fetchedConsultations.push({ ...consultationData, id: docSnap.id, doctorName, serviceName });
+                }
+                setConsultations(fetchedConsultations);
+            } catch (err: any) {
+                console.error("Error fetching consultations:", err);
+                setError(err.message);
+                setMessage({ text: `Error fetching consultations: ${err.message}`, type: "error" }); // Use setMessage
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (user && db && appId) {
+            fetchConsultations();
+        }
+    }, [user, db, appId]);
+
+    if (loading) return (
+        <div className="d-flex justify-content-center align-items-center min-vh-100">
+            <div className="text-center p-5">
+                <LoadingSpinner /><p className="mt-3 text-muted">Loading consultations...</p>
+            </div>
+        </div>
+    );
+    if (error) return <MessageDisplay message={{ text: error, type: "error" }} />; // Use MessageDisplay
+
+    return (
+        <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
+            <h2 className="h3 fw-bold text-primary mb-4 text-center">My Consultations</h2>
+            {consultations.length === 0 ? (
+                <p className="text-muted text-center">No consultations found.</p>
+            ) : (
+                <div className="table-responsive">
+                    <table className="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Time</th>
+                                <th>Doctor</th>
+                                <th>Service</th>
+                                <th>Diagnosis</th>
+                                <th>Recommendations</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {consultations.map(c => (
+                                <tr key={c.id}>
+                                    <td>{c.consultation_date}</td>
+                                    <td>{c.consultation_time}</td>
+                                    <td>{c.doctorName}</td>
+                                    <td>{c.serviceName}</td>
+                                    <td>{c.diagnosis || 'N/A'}</td>
+                                    <td>{c.recommendations || 'N/A'}</td>
+                                    <td>{c.notes}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+            <div className="d-flex justify-content-center mt-4">
+                <button className="btn btn-link" onClick={() => navigate('dashboard')}>Back to Dashboard</button>
+            </div>
         </div>
     );
 };

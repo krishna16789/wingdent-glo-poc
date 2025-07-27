@@ -9,7 +9,7 @@ export const LoadingSpinner: React.FC = () => (
     </div>
 );
 
-export const MessageDisplay: React.FC<{ message: { text: string; type: 'success' | 'error' | 'warning' | '' } }> = ({ message }) => {
+export const MessageDisplay: React.FC<{ message: { text: string; type: 'success' | 'error' | 'warning' | 'info' | '' } }> = ({ message }) => {
     if (!message?.text) return null;
     return (
         <div className={`alert ${message.type === 'success' ? 'alert-success' : 'alert-danger'} text-center mt-3`}>

@@ -1,14 +1,17 @@
 // frontend/src/AdminComponents.tsx
 import React, { useState, useEffect } from 'react';
-import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp, collectionGroup, Timestamp } from 'firebase/firestore'; // Import Timestamp
+import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp, collectionGroup, Timestamp } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { LoadingSpinner, MessageDisplay, CustomModal } from './CommonComponents';
-import { Service, Offer, Appointment, Payment, FeeConfiguration, Address, UserProfile } from './types'; // Import necessary types
+import { Service, Offer, Appointment, Payment, FeeConfiguration, Address, Prescription, HealthRecord, Consultation, UserProfile } from './types'; // Import new types
 import { DashboardProps } from './PatientComponents'; // Import DashboardProps for consistency
 
+// Import the new PrescriptionViewerPage
+import { PrescriptionViewerPage } from './PrescriptionViewerPage'; // NEW IMPORT
+
 // User Management Page (Admin/Superadmin)
-export const UserManagementPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, message, db, appId } = useAuth();
+export const UserManagementPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+    const { user, message, db, appId, setMessage } = useAuth();
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -47,13 +50,14 @@ export const UserManagementPage: React.FC<{ navigate: (page: string, data?: any)
         } catch (err: any) {
             console.error("Error fetching users:", err);
             setError(err.message);
+            setMessage({ text: `Error fetching users: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        if (user && db && appId) { // Ensure db and appId are available
+        if (user && db && appId) {
             fetchUsers();
         }
     }, [user, db, appId, filterRole]);
@@ -71,8 +75,8 @@ export const UserManagementPage: React.FC<{ navigate: (page: string, data?: any)
             years_of_experience: userToEdit.years_of_experience,
             bio: userToEdit.bio,
             is_available_now: userToEdit.is_available_now,
-            average_rating: userToEdit.average_rating, // Include for display
-            total_reviews: userToEdit.total_reviews,   // Include for display
+            average_rating: userToEdit.average_rating,
+            total_reviews: userToEdit.total_reviews,
         });
     };
 
@@ -86,7 +90,7 @@ export const UserManagementPage: React.FC<{ navigate: (page: string, data?: any)
 
     const handleSaveUser = async () => {
         if (!showEditUserModal?.id || !db || !appId || !user?.uid) {
-            setError("Missing user ID or Firebase not initialized.");
+            setMessage({ text: "Missing user ID or Firebase not initialized.", type: "error" });
             return;
         }
         setLoading(true);
@@ -98,11 +102,12 @@ export const UserManagementPage: React.FC<{ navigate: (page: string, data?: any)
                 updated_at: serverTimestamp(),
             });
             setShowEditUserModal(null);
-            alert('User profile updated successfully!');
-            fetchUsers(); // Refresh the list
+            setMessage({ text: 'User profile updated successfully!', type: 'success' });
+            fetchUsers();
         } catch (err: any) {
             console.error("Error saving user:", err);
             setError(err.message);
+            setMessage({ text: `Error saving user: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -110,25 +115,22 @@ export const UserManagementPage: React.FC<{ navigate: (page: string, data?: any)
 
     const handleDeleteUser = async () => {
         if (!showDeleteUserModal?.id || !db || !appId || !user?.uid) {
-            setError("Missing user ID or Firebase not initialized.");
+            setMessage({ text: "Missing user ID or Firebase not initialized.", type: "error" });
             return;
         }
         setLoading(true);
         setError(null);
         try {
-            // In a real app, deleting a user would involve:
-            // 1. Deleting from Firebase Auth (backend API call)
-            // 2. Recursively deleting all subcollections (addresses, appointments, payments, feedback)
-            // For this PoC, we'll just mark as inactive and delete the profile document.
             const userDocRef = doc(db, `artifacts/${appId}/users/${showDeleteUserModal.id}/users`, showDeleteUserModal.id);
-            await deleteDoc(userDocRef); // Delete the profile document
+            await deleteDoc(userDocRef);
 
             setShowDeleteUserModal(null);
-            alert('User deleted successfully!');
+            setMessage({ text: 'User deleted successfully!', type: 'success' });
             fetchUsers();
         } catch (err: any) {
             console.error("Error deleting user:", err);
             setError(err.message);
+            setMessage({ text: `Error deleting user: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -191,10 +193,10 @@ export const UserManagementPage: React.FC<{ navigate: (page: string, data?: any)
                                         <td><span className={`badge ${u.status === 'active' ? 'bg-success' : 'bg-danger'}`}>{u.status}</span></td>
                                         <td>
                                             <button className="btn btn-sm btn-outline-primary me-2" onClick={() => handleEditClick(u)}>Edit</button>
-                                            {user.profile?.role === 'superadmin' && u.role !== 'superadmin' && ( // Superadmin can delete anyone but themselves
+                                            {user.profile?.role === 'superadmin' && u.role !== 'superadmin' && (
                                                 <button className="btn btn-sm btn-outline-danger" onClick={() => setShowDeleteUserModal(u)}>Delete</button>
                                             )}
-                                            {user.profile?.role === 'admin' && u.role !== 'admin' && u.role !== 'superadmin' && ( // Admin can delete patient/doctor
+                                            {user.profile?.role === 'admin' && u.role !== 'admin' && u.role !== 'superadmin' && (
                                                 <button className="btn btn-sm btn-outline-danger" onClick={() => setShowDeleteUserModal(u)}>Delete</button>
                                             )}
                                         </td>
@@ -221,7 +223,7 @@ export const UserManagementPage: React.FC<{ navigate: (page: string, data?: any)
                         </div>
                         <div className="mb-3">
                             <label htmlFor="editEmail" className="form-label">Email:</label>
-                            <input type="email" className="form-control" id="editEmail" name="email" value={editFormData.email || ''} onChange={handleEditFormChange} disabled /> {/* Email usually not editable */}
+                            <input type="email" className="form-control" id="editEmail" name="email" value={editFormData.email || ''} onChange={handleEditFormChange} disabled />
                         </div>
                         <div className="mb-3">
                             <label htmlFor="editRole" className="form-label">Role:</label>
@@ -288,8 +290,8 @@ export const UserManagementPage: React.FC<{ navigate: (page: string, data?: any)
 };
 
 // Service Management Page (Admin/Superadmin)
-export const ServiceManagementPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, message, db, appId } = useAuth();
+export const ServiceManagementPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+    const { user, message, db, appId, setMessage } = useAuth();
     const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -306,20 +308,21 @@ export const ServiceManagementPage: React.FC<{ navigate: (page: string, data?: a
             return;
         }
         try {
-            const servicesCollectionRef = collection(db, `artifacts/${appId}/services`); // Corrected path
+            const servicesCollectionRef = collection(db, `artifacts/${appId}/services`); // CORRECTED PATH
             const snapshot = await getDocs(servicesCollectionRef);
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Service[];
             setServices(data);
         } catch (err: any) {
             console.error("Error fetching services:", err);
             setError(err.message);
+            setMessage({ text: `Error fetching services: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        if (user && db && appId) { // Ensure db and appId are available
+        if (user && db && appId) {
             fetchServices();
         }
     }, [user, db, appId]);
@@ -346,35 +349,34 @@ export const ServiceManagementPage: React.FC<{ navigate: (page: string, data?: a
 
     const handleSaveService = async () => {
         if (!db || !appId || !user?.uid) {
-            setError("Firestore not initialized or user not logged in.");
+            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" });
             return;
         }
         setLoading(true);
         setError(null);
         try {
             if (currentService) {
-                // Update existing service
-                const serviceDocRef = doc(db, `artifacts/${appId}/services`, currentService.id); // Corrected path
+                const serviceDocRef = doc(db, `artifacts/${appId}/services`, currentService.id); // CORRECTED PATH
                 await updateDoc(serviceDocRef, {
                     ...serviceFormData,
                     updated_at: serverTimestamp(),
                 });
-                alert('Service updated successfully!');
+                setMessage({ text: 'Service updated successfully!', type: 'success' });
             } else {
-                // Add new service
-                const servicesCollectionRef = collection(db, `artifacts/${appId}/services`); // Corrected path
+                const servicesCollectionRef = collection(db, `artifacts/${appId}/services`); // CORRECTED PATH
                 await addDoc(servicesCollectionRef, {
                     ...serviceFormData,
                     created_at: serverTimestamp(),
                     updated_at: serverTimestamp(),
                 });
-                alert('Service added successfully!');
+                setMessage({ text: 'Service added successfully!', type: 'success' });
             }
             setShowServiceModal(false);
             fetchServices();
         } catch (err: any) {
             console.error("Error saving service:", err);
             setError(err.message);
+            setMessage({ text: `Error saving service: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -382,19 +384,20 @@ export const ServiceManagementPage: React.FC<{ navigate: (page: string, data?: a
 
     const handleDeleteService = async (serviceId: string) => {
         if (!db || !appId || !user?.uid) {
-            setError("Firestore not initialized or user not logged in.");
+            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" });
             return;
         }
         setLoading(true);
         setError(null);
         try {
-            const serviceDocRef = doc(db, `artifacts/${appId}/services`, serviceId); // Corrected path
+            const serviceDocRef = doc(db, `artifacts/${appId}/services`, serviceId); // CORRECTED PATH
             await deleteDoc(serviceDocRef);
-            alert('Service deleted successfully!');
+            setMessage({ text: 'Service deleted successfully!', type: 'success' });
             fetchServices();
         } catch (err: any) {
             console.error("Error deleting service:", err);
             setError(err.message);
+            setMessage({ text: `Error deleting service: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -494,8 +497,8 @@ export const ServiceManagementPage: React.FC<{ navigate: (page: string, data?: a
 };
 
 // Offer Management Page (Admin/Superadmin)
-export const OfferManagementPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, message, db, appId } = useAuth();
+export const OfferManagementPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+    const { user, message, db, appId, setMessage } = useAuth();
     const [offers, setOffers] = useState<Offer[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -512,20 +515,21 @@ export const OfferManagementPage: React.FC<{ navigate: (page: string, data?: any
             return;
         }
         try {
-            const offersCollectionRef = collection(db, `artifacts/${appId}/offers`); // Corrected path
+            const offersCollectionRef = collection(db, `artifacts/${appId}/offers`); // CORRECTED PATH
             const snapshot = await getDocs(offersCollectionRef);
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Offer[];
             setOffers(data);
         } catch (err: any) {
             console.error("Error fetching offers:", err);
             setError(err.message);
+            setMessage({ text: `Error fetching offers: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        if (user && db && appId) { // Ensure db and appId are available
+        if (user && db && appId) {
             fetchOffers();
         }
     }, [user, db, appId]);
@@ -549,35 +553,34 @@ export const OfferManagementPage: React.FC<{ navigate: (page: string, data?: any
 
     const handleSaveOffer = async () => {
         if (!db || !appId || !user?.uid) {
-            setError("Firestore not initialized or user not logged in.");
+            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" });
             return;
         }
         setLoading(true);
         setError(null);
         try {
             if (currentOffer) {
-                // Update existing offer
-                const offerDocRef = doc(db, `artifacts/${appId}/offers`, currentOffer.id); // Corrected path
+                const offerDocRef = doc(db, `artifacts/${appId}/offers`, currentOffer.id); // CORRECTED PATH
                 await updateDoc(offerDocRef, {
                     ...offerFormData,
                     updated_at: serverTimestamp(),
                 });
-                alert('Offer updated successfully!');
+                setMessage({ text: 'Offer updated successfully!', type: 'success' });
             } else {
-                // Add new offer
-                const offersCollectionRef = collection(db, `artifacts/${appId}/offers`); // Corrected path
+                const offersCollectionRef = collection(db, `artifacts/${appId}/offers`); // CORRECTED PATH
                 await addDoc(offersCollectionRef, {
                     ...offerFormData,
                     created_at: serverTimestamp(),
                     updated_at: serverTimestamp(),
                 });
-                alert('Offer added successfully!');
+                setMessage({ text: 'Offer added successfully!', type: 'success' });
             }
             setShowOfferModal(false);
             fetchOffers();
         } catch (err: any) {
             console.error("Error saving offer:", err);
             setError(err.message);
+            setMessage({ text: `Error saving offer: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -585,19 +588,20 @@ export const OfferManagementPage: React.FC<{ navigate: (page: string, data?: any
 
     const handleDeleteOffer = async (offerId: string) => {
         if (!db || !appId || !user?.uid) {
-            setError("Firestore not initialized or user not logged in.");
+            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" });
             return;
         }
         setLoading(true);
         setError(null);
         try {
-            const offerDocRef = doc(db, `artifacts/${appId}/offers`, offerId); // Corrected path
+            const offerDocRef = doc(db, `artifacts/${appId}/offers`, offerId); // CORRECTED PATH
             await deleteDoc(offerDocRef);
-            alert('Offer deleted successfully!');
+            setMessage({ text: 'Offer deleted successfully!', type: 'success' });
             fetchOffers();
         } catch (err: any) {
             console.error("Error deleting offer:", err);
             setError(err.message);
+            setMessage({ text: `Error deleting offer: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -693,8 +697,8 @@ export const OfferManagementPage: React.FC<{ navigate: (page: string, data?: any
 };
 
 // Appointment Oversight Page (Admin/Superadmin)
-export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, message, db, appId } = useAuth();
+export const AppointmentOversightPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+    const { user, message, db, appId, setMessage } = useAuth();
     const [appointments, setAppointments] = useState<Appointment[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -710,7 +714,7 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
         payment_method: '',
         transaction_id: '',
     });
-    const [feeConfig, setFeeConfig] = useState<FeeConfiguration | null>(null); // Store fee configuration
+    const [feeConfig, setFeeConfig] = useState<FeeConfiguration | null>(null);
 
     // Fetch Fee Configuration on component mount
     useEffect(() => {
@@ -728,18 +732,19 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
                         platform_fee_percentage: 0.15, // 15%
                         doctor_share_percentage: 0.70, // 70%
                         admin_fee_percentage: 0.15,  // 15%
-                        effective_from: serverTimestamp(),
+                        effective_from: Timestamp.now(),
                         created_by: user?.uid || 'system',
-                        created_at: serverTimestamp(),
-                        updated_at: serverTimestamp(),
+                        created_at: Timestamp.now(),
+                        updated_at: Timestamp.now(),
                     });
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.error("Error fetching fee configuration:", err);
-                setError("Failed to load fee configuration.");
+                setError(err.message);
+                setMessage({ text: `Failed to load fee configuration: ${err.message}`, type: "error" });
             }
         };
-        if (user && db && appId) { // Ensure db and appId are available
+        if (user && db && appId) {
             fetchFeeConfig();
         }
     }, [user, db, appId]);
@@ -754,10 +759,24 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
             return;
         }
         try {
-            // Use collectionGroup to query all 'appointments' subcollections
+            // Pre-fetch all services once
+            const servicesMap = new Map<string, Service>();
+            const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // CORRECTED PATH
+            servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
+
+            // Pre-fetch all users (patients and doctors) once
+            const usersMap = new Map<string, UserProfile>();
+            const allUsersSnapshot = await getDocs(collectionGroup(db, 'users'));
+            allUsersSnapshot.docs.forEach(docSnap => {
+                const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                const pathSegments = docSnap.ref.path.split('/');
+                if (pathSegments[1] === appId) { // Ensure it belongs to this app's structure
+                    usersMap.set(docSnap.id, profileData);
+                }
+            });
+
             let appointmentsQuery = query(collectionGroup(db, 'appointments'));
 
-            // Filter by status if a specific status is selected
             if (filterStatus !== 'all') {
                 appointmentsQuery = query(appointmentsQuery, where('status', '==', filterStatus));
             }
@@ -767,37 +786,21 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
 
             for (const docSnap of snapshot.docs) {
                 const pathSegments = docSnap.ref.path.split('/');
-                // Ensure the appointment belongs to the current app instance
-                // Path format: `artifacts/{appId}/users/{patientId}/appointments/{appointmentId}`
                 if (pathSegments[1] === appId) {
                     const apptData = docSnap.data() as Appointment;
-                    let patientName = 'Unknown Patient';
-                    let serviceName = 'Unknown Service';
-                    let doctorName = 'Unassigned';
-                    let addressDetails: Address | undefined; // To store fetched address
+                    
+                    // Get patient name
+                    const patientName = usersMap.get(apptData.patient_id)?.full_name || usersMap.get(apptData.patient_id)?.email || 'Unknown Patient';
 
-                    // Fetch patient details
-                    if (apptData.patient_id) {
-                        const patientUserDocRef = doc(db, `artifacts/${appId}/users/${apptData.patient_id}/users`, apptData.patient_id);
-                        const patientProfileSnap = await getDoc(patientUserDocRef);
-                        patientName = patientProfileSnap.exists() ? (patientProfileSnap.data() as UserProfile).full_name || (patientProfileSnap.data() as UserProfile).email : patientName;
-                    }
+                    // Get service name from the pre-fetched map
+                    const serviceName = servicesMap.get(apptData.service_id)?.name || 'Unknown Service';
 
-                    // Fetch service details
-                    if (apptData.service_id) {
-                        const serviceDocRef = doc(db, `artifacts/${appId}/services`, apptData.service_id); // Corrected path
-                        const serviceSnap = await getDoc(serviceDocRef);
-                        serviceName = serviceSnap.exists() ? (serviceSnap.data() as Service).name : serviceName;
-                    }
+                    // Get doctor name
+                    const doctorName = apptData.doctor_id ? (usersMap.get(apptData.doctor_id)?.full_name || usersMap.get(apptData.doctor_id)?.email || 'Unassigned') : 'Unassigned';
+                    
+                    let addressDetails: Address | undefined;
 
-                    // Fetch doctor details
-                    if (apptData.doctor_id) {
-                        const doctorUserDocRef = doc(db, `artifacts/${appId}/users/${apptData.doctor_id}/users`, apptData.doctor_id);
-                        const doctorProfileSnap = await getDoc(doctorUserDocRef);
-                        doctorName = doctorProfileSnap.exists() ? (doctorProfileSnap.data() as UserProfile).full_name || (doctorProfileSnap.data() as UserProfile).email : doctorName;
-                    }
-
-                    // Fetch address details
+                    // Fetch address details (still need to fetch individually as they are in patient's subcollection)
                     if (apptData.patient_id && apptData.address_id) {
                         const addressDocRef = doc(db, `artifacts/${appId}/users/${apptData.patient_id}/addresses`, apptData.address_id);
                         const addressSnap = await getDoc(addressDocRef);
@@ -812,7 +815,7 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
                         patientName,
                         serviceName,
                         doctorName,
-                        addressDetails, // Include address details
+                        addressDetails,
                     });
                 }
             }
@@ -820,6 +823,7 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
         } catch (err: any) {
             console.error("Error fetching all appointments:", err);
             setError(err.message);
+            setMessage({ text: `Error fetching all appointments: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -834,16 +838,14 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
             return;
         }
         try {
-            // Fetch doctors from the 'users' subcollection where role is 'doctor' and status is 'active'
             const doctorsQuery = query(
-                collectionGroup(db, 'users'), // Query all 'users' subcollections
+                collectionGroup(db, 'users'),
                 where('role', '==', 'doctor'),
                 where('status', '==', 'active')
             );
             const snapshot = await getDocs(doctorsQuery);
             const doctors = snapshot.docs
                 .filter(docSnap => {
-                    // Additional check to ensure the doctor belongs to the current appId's structure
                     const pathSegments = docSnap.ref.path.split('/');
                     return pathSegments[1] === appId && pathSegments[3] === docSnap.id;
                 })
@@ -852,13 +854,14 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
         } catch (err: any) {
             console.error("Error fetching available doctors:", err);
             setError(err.message);
+            setMessage({ text: `Error fetching available doctors: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        if (user && db && appId) { // Ensure db and appId are available
+        if (user && db && appId) {
             fetchAppointments();
             fetchAvailableDoctors();
         }
@@ -866,12 +869,12 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
 
     const handleAssignDoctorClick = (appointment: Appointment) => {
         setShowAssignDoctorModal(appointment);
-        setSelectedDoctorId(appointment.doctor_id || ''); // Pre-select if already assigned
+        setSelectedDoctorId(appointment.doctor_id || '');
     };
 
     const handleAssignDoctor = async () => {
         if (!showAssignDoctorModal?.id || !selectedDoctorId || !db || !appId || !user?.uid) {
-            setError("Missing appointment or doctor ID, or Firebase not initialized.");
+            setMessage({ text: "Missing appointment or doctor ID, or Firebase not initialized.", type: "error" });
             return;
         }
         setLoading(true);
@@ -880,22 +883,22 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
             const appointmentDocRef = doc(db, `artifacts/${appId}/users/${showAssignDoctorModal.patient_id}/appointments`, showAssignDoctorModal.id);
             await updateDoc(appointmentDocRef, {
                 doctor_id: selectedDoctorId,
-                status: 'assigned', // Mark as assigned
+                status: 'assigned',
                 assigned_at: serverTimestamp(),
                 updated_at: serverTimestamp(),
             });
             setShowAssignDoctorModal(null);
-            alert('Doctor assigned successfully!');
-            fetchAppointments(); // Refresh the list
+            setMessage({ text: 'Doctor assigned successfully!', type: 'success' });
+            fetchAppointments();
         } catch (err: any) {
             console.error("Error assigning doctor:", err);
             setError(err.message);
+            setMessage({ text: `Error assigning doctor: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
     };
 
-    // Handle Record Payment Click
     const handleRecordPaymentClick = (appointment: Appointment) => {
         setShowRecordPaymentModal(appointment);
         setPaymentFormData({
@@ -905,7 +908,6 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
         });
     };
 
-    // Handle Payment Form Change
     const handlePaymentFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setPaymentFormData(prev => ({
@@ -914,14 +916,13 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
         }));
     };
 
-    // Handle Record Payment Submission
     const handleRecordPayment = async () => {
         if (!showRecordPaymentModal || !db || !appId || !user?.uid || !feeConfig) {
-            setError("Missing data for payment recording or Firebase not initialized.");
+            setMessage({ text: "Missing data for payment recording or Firebase not initialized.", type: "error" });
             return;
         }
         if (paymentFormData.amount <= 0 || !paymentFormData.payment_method) {
-            setError("Please enter a valid amount and select a payment method.");
+            setMessage({ text: "Please enter a valid amount and select a payment method.", type: "error" });
             return;
         }
 
@@ -932,25 +933,24 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
             const appointment = showRecordPaymentModal;
             const totalAmount = paymentFormData.amount;
 
-            // Calculate fee breakdowns
             const platformFee = totalAmount * (feeConfig.platform_fee_percentage || 0);
             const doctorShare = totalAmount * (feeConfig.doctor_share_percentage || 0);
             const adminFee = totalAmount * (feeConfig.admin_fee_percentage || 0);
 
-            // Update appointment status to paid
             const appointmentDocRef = doc(db, `artifacts/${appId}/users/${appointment.patient_id}/appointments`, appointment.id);
             await updateDoc(appointmentDocRef, {
                 payment_status: 'paid',
                 updated_at: serverTimestamp(),
             });
 
-            // Create a new payment record
-            const paymentsCollectionRef = collection(db, `artifacts/${appId}/users/${appointment.patient_id}/payments`);
+            const paymentsCollectionRef = collection(db, `artifacts/${appId}/public/data/payments`);
             await addDoc(paymentsCollectionRef, {
                 appointment_id: appointment.id,
                 patient_id: appointment.patient_id,
+                doctor_id: appointment.doctor_id || null,
+                service_id: appointment.service_id,
                 amount: totalAmount,
-                currency: 'INR', // Assuming INR, can be made dynamic
+                currency: 'INR',
                 payment_gateway_transaction_id: paymentFormData.transaction_id || `OFFLINE-${Date.now()}`,
                 status: 'successful',
                 payment_method: paymentFormData.payment_method,
@@ -958,15 +958,16 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
                 doctor_fee_amount: doctorShare,
                 admin_fee_amount: adminFee,
                 transaction_date: serverTimestamp(),
-                recorded_by: user.uid, // Record who made the entry
+                recorded_by: user.uid,
             });
 
             setShowRecordPaymentModal(null);
-            alert('Payment recorded successfully!');
-            fetchAppointments(); // Refresh the list
+            setMessage({ text: 'Payment recorded successfully!', type: 'success' });
+            fetchAppointments();
         } catch (err: any) {
             console.error("Error recording payment:", err);
             setError(err.message);
+            setMessage({ text: `Error recording payment: ${err.message}`, type: "error" });
         } finally {
             setLoading(false);
         }
@@ -1040,7 +1041,7 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
                                     <th>Service</th>
                                     <th>Date</th>
                                     <th>Time</th>
-                                    <th>Address</th> {/* Added Address Column */}
+                                    <th>Address</th>
                                     <th>Doctor</th>
                                     <th>Status</th>
                                     <th>Payment</th>
@@ -1062,7 +1063,7 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
                                                     {appt.addressDetails.city}, {appt.addressDetails.state} {appt.addressDetails.zip_code}
                                                 </>
                                             ) : 'N/A'}
-                                        </td> {/* Display Address */}
+                                        </td>
                                         <td>{appt.doctorName}</td>
                                         <td><span className={`badge ${getStatusBadgeClass(appt.status)}`}>{appt.status.replace(/_/g, ' ').toUpperCase()}</span></td>
                                         <td><span className={`badge ${appt.payment_status === 'paid' ? 'bg-success' : 'bg-secondary'}`}>{appt.payment_status.toUpperCase()}</span></td>
@@ -1073,7 +1074,6 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
                                             {appt.status === 'completed' && appt.payment_status === 'pending' && (
                                                 <button className="btn btn-sm btn-success ms-2" onClick={() => handleRecordPaymentClick(appt)}>Record Payment</button>
                                             )}
-                                            {/* Add other admin actions like reschedule/cancel if needed */}
                                         </td>
                                     </tr>
                                 ))}
@@ -1187,20 +1187,447 @@ export const AppointmentOversightPage: React.FC<{ navigate: (page: string, data?
     );
 };
 
+// NEW: AdminPatientOversightPage - Lists all patients for admin to view their records
+export const AdminPatientOversightPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+    const { user, db, appId, setMessage } = useAuth();
+    const [patients, setPatients] = useState<UserProfile[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filteredPatients, setFilteredPatients] = useState<UserProfile[]>([]);
+
+    useEffect(() => {
+        const fetchPatients = async () => {
+            setLoading(true);
+            setError(null);
+            if (!db || !appId || !user?.uid) {
+                setError("Firestore not initialized or user not logged in.");
+                setLoading(false);
+                return;
+            }
+            try {
+                const patientsQuery = query(
+                    collectionGroup(db, 'users'),
+                    where('role', '==', 'patient')
+                );
+                const snapshot = await getDocs(patientsQuery);
+                const fetchedPatients: UserProfile[] = [];
+                snapshot.docs.forEach(docSnap => {
+                    const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId && pathSegments[3] === docSnap.id) {
+                        fetchedPatients.push(profileData);
+                    }
+                });
+                setPatients(fetchedPatients);
+                setFilteredPatients(fetchedPatients);
+            } catch (err: any) {
+                console.error("Error fetching patients for admin oversight:", err);
+                setError(err.message);
+                setMessage({ text: `Error fetching patients: ${err.message}`, type: "error" });
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (user && db && appId) {
+            fetchPatients();
+        }
+    }, [user, db, appId]);
+
+    useEffect(() => {
+        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        const results = patients.filter(patient =>
+            (patient.full_name?.toLowerCase().includes(lowerCaseSearchTerm) ||
+             patient.email.toLowerCase().includes(lowerCaseSearchTerm) ||
+             patient.phone_number?.toLowerCase().includes(lowerCaseSearchTerm))
+        );
+        setFilteredPatients(results);
+    }, [searchTerm, patients]);
+
+    if (loading) return (
+        <div className="d-flex justify-content-center align-items-center min-vh-100">
+            <div className="text-center p-5">
+                <LoadingSpinner /><p className="mt-3 text-muted">Loading patients for oversight...</p>
+            </div>
+        </div>
+    );
+    if (error) return <MessageDisplay message={{ text: error, type: "error" }} />;
+    if (!user || (user.profile?.role !== 'admin' && user.profile?.role !== 'superadmin')) {
+        return <MessageDisplay message={{ text: "Access Denied. You must be an Admin or Superadmin to view this page.", type: "error" }} />;
+    }
+
+    return (
+        <div className="container py-4">
+            <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
+                <h2 className="h3 fw-bold text-primary mb-4 text-center">Patient Health Oversight</h2>
+
+                <div className="mb-4">
+                    <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Search patients by name, email, or phone..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+
+                {filteredPatients.length === 0 ? (
+                    <p className="text-muted text-center">No patients found matching your search.</p>
+                ) : (
+                    <div className="list-group">
+                        {filteredPatients.map(patient => (
+                            <button
+                                key={patient.id}
+                                className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                onClick={() => navigate('adminPatientHealthDataView', { patientId: patient.id, patientName: patient.full_name || patient.email })}
+                            >
+                                <div>
+                                    <h5 className="mb-1">{patient.full_name || patient.email}</h5>
+                                    <small className="text-muted">{patient.email} {patient.phone_number && `| ${patient.phone_number}`}</small>
+                                </div>
+                                <span className="badge bg-primary rounded-pill">View Health Records</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+            <div className="d-flex justify-content-center mt-4">
+                <button className="btn btn-link" onClick={() => navigate('dashboard')}>Back to Dashboard</button>
+            </div>
+        </div>
+    );
+};
+
+// NEW: AdminPatientHealthDataViewPage - Displays a specific patient's health data for admin
+export const AdminPatientHealthDataViewPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string }> = ({ navigate, patientId, patientName }) => { // MODIFIED: navigate type
+    const { user, db, appId, setMessage } = useAuth();
+    const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+    const [healthRecords, setHealthRecords] = useState<HealthRecord[]>([]);
+    const [consultations, setConsultations] = useState<Consultation[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchPatientData = async () => {
+            setLoading(true);
+            setError(null);
+            if (!db || !appId || !user?.uid || !patientId) {
+                setError("Firebase not initialized, user not logged in, or patient ID missing.");
+                setLoading(false);
+                return;
+            }
+            try {
+                // Pre-fetch all doctors and services once for enrichment
+                const doctorsMap = new Map<string, UserProfile>();
+                const servicesMap = new Map<string, Service>();
+
+                const allUsersSnapshot = await getDocs(collectionGroup(db, 'users'));
+                allUsersSnapshot.docs.forEach(docSnap => {
+                    const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId && profileData.role === 'doctor') {
+                        doctorsMap.set(docSnap.id, profileData);
+                    }
+                });
+
+                const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // CORRECTED PATH
+                servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
+
+
+                // Fetch Prescriptions for the patient
+                const prescriptionsCollectionRef = collection(db, `artifacts/${appId}/users/${patientId}/prescriptions`);
+                const prescriptionsSnapshot = await getDocs(prescriptionsCollectionRef);
+                const fetchedPrescriptions: Prescription[] = [];
+                for (const docSnap of prescriptionsSnapshot.docs) {
+                    const prescriptionData = docSnap.data() as Prescription;
+                    const doctorName = doctorsMap.get(prescriptionData.doctor_id)?.full_name || doctorsMap.get(prescriptionData.doctor_id)?.email || 'Unknown Doctor';
+                    fetchedPrescriptions.push({ ...prescriptionData, id: docSnap.id, doctorName });
+                }
+                setPrescriptions(fetchedPrescriptions);
+
+                // Fetch Health Records for the patient
+                const healthRecordsCollectionRef = collection(db, `artifacts/${appId}/users/${patientId}/health_records`);
+                const healthRecordsSnapshot = await getDocs(healthRecordsCollectionRef);
+                const fetchedHealthRecords: HealthRecord[] = [];
+                for (const docSnap of healthRecordsSnapshot.docs) {
+                    const recordData = docSnap.data() as HealthRecord;
+                    const doctorName = recordData.doctor_id ? (doctorsMap.get(recordData.doctor_id)?.full_name || doctorsMap.get(recordData.doctor_id)?.email || 'Unknown Doctor') : 'Patient Added';
+                    fetchedHealthRecords.push({ ...recordData, id: docSnap.id, doctorName });
+                }
+                setHealthRecords(fetchedHealthRecords);
+
+                // Fetch Consultations for the patient
+                const consultationsCollectionRef = collection(db, `artifacts/${appId}/users/${patientId}/consultations`);
+                const consultationsSnapshot = await getDocs(consultationsCollectionRef);
+                const fetchedConsultations: Consultation[] = [];
+                for (const docSnap of consultationsSnapshot.docs) {
+                    const consultationData = docSnap.data() as Consultation;
+                    const doctorName = doctorsMap.get(consultationData.doctor_id)?.full_name || doctorsMap.get(consultationData.doctor_id)?.email || 'Unknown Doctor';
+
+                    let serviceName = 'N/A';
+                    if (consultationData.appointment_id) {
+                        const appointmentDocRef = doc(db, `artifacts/${appId}/users/${patientId}/appointments`, consultationData.appointment_id);
+                        const appointmentSnap = await getDoc(appointmentDocRef);
+                        if (appointmentSnap.exists()) {
+                            const serviceId = (appointmentSnap.data() as Appointment).service_id;
+                            serviceName = servicesMap.get(serviceId)?.name || 'Unknown Service';
+                        }
+                    }
+                    fetchedConsultations.push({ ...consultationData, id: docSnap.id, doctorName, serviceName });
+                }
+                setConsultations(fetchedConsultations);
+
+            } catch (err: any) {
+                console.error("Error fetching patient health data for admin:", err);
+                setError(err.message);
+                setMessage({ text: `Error fetching patient data: ${err.message}`, type: "error" });
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (user && db && appId && patientId) {
+            fetchPatientData();
+        }
+    }, [user, db, appId, patientId]);
+
+    if (loading) return (
+        <div className="d-flex justify-content-center align-items-center min-vh-100">
+            <div className="text-center p-5">
+                <LoadingSpinner /><p className="mt-3 text-muted">Loading patient health data...</p>
+            </div>
+        </div>
+    );
+    if (error) return <MessageDisplay message={{ text: error, type: "error" }} />;
+    if (!user || (user.profile?.role !== 'admin' && user.profile?.role !== 'superadmin')) {
+        return <MessageDisplay message={{ text: "Access Denied. You must be an Admin or Superadmin to view this page.", type: "error" }} />;
+    }
+
+    return (
+        <div className="container py-4">
+            <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
+                <h2 className="h3 fw-bold text-primary mb-4 text-center">Health Data for {patientName}</h2>
+
+                <h4 className="h5 fw-bold text-primary mb-3">Prescriptions</h4>
+                {prescriptions.length === 0 ? (
+                    <p className="text-muted">No prescriptions found for this patient.</p>
+                ) : (
+                    <div className="table-responsive mb-4">
+                        <table className="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Prescribed Date</th>
+                                    <th>Expires Date</th>
+                                    <th>Prescribed By</th>
+                                    <th>Medications</th>
+                                    <th>Actions</th> {/* NEW: Actions column */}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {prescriptions.map(p => (
+                                    <tr key={p.id}>
+                                        <td>{p.prescribed_date}</td>
+                                        <td>{p.expires_date || 'N/A'}</td>
+                                        <td>{p.doctorName}</td>
+                                        <td>
+                                            {p.medications && p.medications.length > 0 ? (
+                                                <ul className="list-unstyled mb-0">
+                                                    {p.medications.map((med, idx) => (
+                                                        <li key={idx}>
+                                                            <strong>{med.medication_name}:</strong> {med.dosage}, {med.frequency}. <em>{med.instructions}</em>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            ) : (
+                                                'No medications listed.'
+                                            )}
+                                        </td>
+                                        <td>
+                                            <button
+                                                className="btn btn-sm btn-outline-info"
+                                                onClick={() => navigate('prescriptionViewer', { patientId, prescriptionId: p.id })}
+                                            >
+                                                View
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                <h4 className="h5 fw-bold text-primary mb-3">Health Records</h4>
+                {healthRecords.length === 0 ? (
+                    <p className="text-muted">No health records found for this patient.</p>
+                ) : (
+                    <div className="table-responsive mb-4">
+                        <table className="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Title</th>
+                                    <th>Description</th>
+                                    <th>Added By</th>
+                                    <th>Attachment</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {healthRecords.map(r => (
+                                    <tr key={r.id}>
+                                        <td>{r.record_date}</td>
+                                        <td>{r.record_type.replace(/_/g, ' ').toUpperCase()}</td>
+                                        <td>{r.title}</td>
+                                        <td>{r.description}</td>
+                                        <td>{r.doctorName}</td>
+                                        <td>
+                                            {r.attachment_url ? (
+                                                <a href={r.attachment_url} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline-primary">View</a>
+                                            ) : 'N/A'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                <h4 className="h5 fw-bold text-primary mb-3">Consultations</h4>
+                {consultations.length === 0 ? (
+                    <p className="text-muted">No consultation notes found for this patient.</p>
+                ) : (
+                    <div className="table-responsive mb-4">
+                        <table className="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Time</th>
+                                    <th>Doctor</th>
+                                    <th>Service</th>
+                                    <th>Diagnosis</th>
+                                    <th>Recommendations</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {consultations.map(c => (
+                                    <tr key={c.id}>
+                                        <td>{c.consultation_date}</td>
+                                        <td>{c.consultation_time}</td>
+                                        <td>{c.doctorName}</td>
+                                        <td>{c.serviceName}</td>
+                                        <td>{c.diagnosis || 'N/A'}</td>
+                                        <td>{c.recommendations || 'N/A'}</td>
+                                        <td>{c.notes}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+            <div className="d-flex justify-content-center mt-4">
+                <button className="btn btn-link" onClick={() => navigate('adminPatientOversight')}>Back to Patient List</button>
+            </div>
+        </div>
+    );
+};
+
+
 // AdminDashboard Component
 export const AdminDashboard: React.FC<DashboardProps> = ({ navigate, currentPage, pageData }) => {
-    const { user, logout } = useAuth();
-    // const [currentPage, setCurrentPage] = useState('dashboard'); // Removed local state, use props
-    // const [pageData, setPageData] = useState<any>(null); // Removed local state, use props
+    const { user, logout, message, db, appId } = useAuth(); // Added db, appId
 
-    // const navigate = (page: string, data: any = null) => { // Removed local navigate, use props
-    //     setCurrentPage(page);
-    //     setPageData(data);
-    // };
+    const [pendingAppointmentsCount, setPendingAppointmentsCount] = useState<number>(0);
+    const [activeDoctorsCount, setActiveDoctorsCount] = useState<number>(0);
+    const [totalPatientsCount, setTotalPatientsCount] = useState<number>(0);
+    const [loadingStats, setLoadingStats] = useState(true);
+    const [errorStats, setErrorStats] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchDashboardStats = async () => {
+            setLoadingStats(true);
+            setErrorStats(null);
+            if (!db || !appId || !user?.uid) {
+                setErrorStats("Firestore not initialized or user not logged in.");
+                setLoadingStats(false);
+                return;
+            }
+            try {
+                // Fetch Pending Appointments
+                const pendingAppointmentsQuery = query(
+                    collectionGroup(db, 'appointments'),
+                    where('status', '==', 'pending_assignment')
+                );
+                const pendingAppointmentsSnapshot = await getDocs(pendingAppointmentsQuery);
+                let countPending = 0;
+                pendingAppointmentsSnapshot.docs.forEach(docSnap => {
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) { // Ensure it belongs to this app's structure
+                        countPending++;
+                    }
+                });
+                setPendingAppointmentsCount(countPending);
+
+                // Fetch Active Doctors
+                const activeDoctorsQuery = query(
+                    collectionGroup(db, 'users'),
+                    where('role', '==', 'doctor'),
+                    where('status', '==', 'active')
+                );
+                const activeDoctorsSnapshot = await getDocs(activeDoctorsQuery);
+                let countActiveDoctors = 0;
+                activeDoctorsSnapshot.docs.forEach(docSnap => {
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) { // Ensure it belongs to this app's structure
+                        countActiveDoctors++;
+                    }
+                });
+                setActiveDoctorsCount(countActiveDoctors);
+
+                // Fetch Total Patients
+                const totalPatientsQuery = query(
+                    collectionGroup(db, 'users'),
+                    where('role', '==', 'patient')
+                );
+                const totalPatientsSnapshot = await getDocs(totalPatientsQuery);
+                let countTotalPatients = 0;
+                totalPatientsSnapshot.docs.forEach(docSnap => {
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) { // Ensure it belongs to this app's structure
+                        countTotalPatients++;
+                    }
+                });
+                setTotalPatientsCount(countTotalPatients);
+
+            } catch (err: any) {
+                console.error("Error fetching admin dashboard stats:", err);
+                setErrorStats(err.message);
+            } finally {
+                setLoadingStats(false);
+            }
+        };
+
+        if (user && db && appId && currentPage === 'dashboard') {
+            fetchDashboardStats();
+        }
+    }, [user, db, appId, currentPage]);
+
 
     const renderAdminPage = () => {
         switch (currentPage) {
             case 'dashboard':
+                if (loadingStats) return (
+                    <div className="d-flex justify-content-center align-items-center min-vh-100">
+                        <div className="text-center p-5">
+                            <LoadingSpinner /><p className="mt-3 text-muted">Loading dashboard stats...</p>
+                        </div>
+                    </div>
+                );
+                if (errorStats) return <MessageDisplay message={{ text: errorStats, type: "error" }} />;
+
                 return (
                     <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
                         <div className="d-flex justify-content-between align-items-center mb-4">
@@ -1229,6 +1656,7 @@ export const AdminDashboard: React.FC<DashboardProps> = ({ navigate, currentPage
                                             <button className="btn btn-outline-primary" onClick={() => navigate('serviceManagement')}>Service Management</button>
                                             <button className="btn btn-outline-info" onClick={() => navigate('offerManagement')}>Offer Management</button>
                                             <button className="btn btn-outline-secondary" onClick={() => navigate('appointmentOversight')}>Appointment Oversight</button>
+                                            <button className="btn btn-outline-success" onClick={() => navigate('adminPatientOversight')}>Patient Health Oversight</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1238,9 +1666,9 @@ export const AdminDashboard: React.FC<DashboardProps> = ({ navigate, currentPage
                                     <div className="card-body">
                                         <h5 className="card-title text-primary">Quick Stats</h5>
                                         <ul className="list-group list-group-flush">
-                                            <li className="list-group-item">Pending Appointments: <strong>5</strong></li>
-                                            <li className="list-group-item">Active Doctors: <strong>3</strong></li>
-                                            <li className="list-group-item">Total Patients: <strong>25</strong></li>
+                                            <li className="list-group-item">Pending Appointments: <strong>{pendingAppointmentsCount}</strong></li>
+                                            <li className="list-group-item">Active Doctors: <strong>{activeDoctorsCount}</strong></li>
+                                            <li className="list-group-item">Total Patients: <strong>{totalPatientsCount}</strong></li>
                                         </ul>
                                     </div>
                                 </div>
@@ -1256,6 +1684,12 @@ export const AdminDashboard: React.FC<DashboardProps> = ({ navigate, currentPage
                 return <OfferManagementPage navigate={navigate} />;
             case 'appointmentOversight':
                 return <AppointmentOversightPage navigate={navigate} />;
+            case 'adminPatientOversight':
+                return <AdminPatientOversightPage navigate={navigate} />;
+            case 'adminPatientHealthDataView':
+                return <AdminPatientHealthDataViewPage navigate={navigate} patientId={pageData.patientId} patientName={pageData.patientName} />;
+            case 'prescriptionViewer': // NEW CASE for Prescription Viewer
+                return <PrescriptionViewerPage navigate={navigate} patientId={pageData.patientId} prescriptionId={pageData.prescriptionId} />;
             default:
                 return <MessageDisplay message={{ text: "Page not found.", type: "error" }} />;
         }

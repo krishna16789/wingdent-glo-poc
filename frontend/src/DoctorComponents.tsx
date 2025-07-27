@@ -1,10 +1,13 @@
 // frontend/src/DoctorComponents.tsx
 import React, { useState, useEffect } from 'react';
-import { collection, doc, getDocs, getDoc, updateDoc, query, where, serverTimestamp, Timestamp, writeBatch, setDoc, collectionGroup } from 'firebase/firestore';
-import { useAuth } from './AuthContext';
+import { collection, doc, getDocs, getDoc, updateDoc, query, where, serverTimestamp, Timestamp, writeBatch, setDoc, collectionGroup, orderBy, addDoc } from 'firebase/firestore';
+import { useAuth } from './AuthContext'; // UserProfile is imported from types now, but useAuth is needed for user context
 import { LoadingSpinner, MessageDisplay, CustomModal } from './CommonComponents';
-import { Appointment, Service, Address, Feedback, UserProfile } from './types';
+import { Appointment, Service, Address, Feedback, Prescription, HealthRecord, Consultation, MedicationItem, UserProfile } from './types'; // Import Prescription, HealthRecord, Consultation
 import { DashboardProps } from './PatientComponents'; // Import DashboardProps for consistency
+
+// Import the new PrescriptionViewerPage
+import { PrescriptionViewerPage } from './PrescriptionViewerPage'; // NEW IMPORT
 
 // Extend the Feedback type for local use in this component
 interface EnrichedFeedback extends Feedback {
@@ -31,7 +34,7 @@ const getStatusBadgeClass = (status: Appointment['status']) => {
 
 // Doctor Dashboard
 export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPage, pageData }) => {
-    const { user, logout, db, appId } = useAuth();
+    const { user, logout, db, appId, message } = useAuth(); // Added message from useAuth
     const [assignedAppointmentsCount, setAssignedAppointmentsCount] = useState<number>(0);
     const [pendingAppointmentsCount, setPendingAppointmentsCount] = useState<number>(0);
     const [loadingDashboard, setLoadingDashboard] = useState(true);
@@ -55,7 +58,14 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
                     where('status', 'in', ['assigned', 'confirmed', 'on_the_way', 'arrived', 'service_started'])
                 );
                 const assignedSnapshot = await getDocs(qAssigned);
-                setAssignedAppointmentsCount(assignedSnapshot.size);
+                let assignedCount = 0;
+                assignedSnapshot.docs.forEach(docSnap => {
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) {
+                        assignedCount++;
+                    }
+                });
+                setAssignedAppointmentsCount(assignedCount);
 
                 // Fetch pending assignments (appointments not yet assigned to any doctor)
                 // Requires composite index: appointments (status ASC, doctor_id ASC)
@@ -65,7 +75,14 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
                     where('doctor_id', '==', null) // Appointments with no doctor assigned
                 );
                 const pendingSnapshot = await getDocs(qPending);
-                setPendingAppointmentsCount(pendingSnapshot.size);
+                let pendingCount = 0;
+                pendingSnapshot.docs.forEach(docSnap => {
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) {
+                        pendingCount++;
+                    }
+                });
+                setPendingAppointmentsCount(pendingCount);
 
             } catch (err: any) {
                 console.error("Error fetching doctor dashboard data:", err);
@@ -100,6 +117,7 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
                     <div className="container py-4">
                         <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
                             <h2 className="h3 fw-bold text-info mb-4 text-center">Doctor Dashboard</h2>
+                            <MessageDisplay message={message} /> {/* Display messages from AuthContext */}
 
                             <div className="text-center mb-4">
                                 <img
@@ -137,7 +155,18 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
                                 </div>
                             </div>
 
-                            <div className="row g-4">
+                            <div className="row g-4 mb-4">
+                                <div className="col-md-6">
+                                    <div className="card h-100 shadow-sm rounded-3">
+                                        <div className="card-body">
+                                            <h5 className="card-title fw-bold text-info">Patient Data & Records</h5>
+                                            <div className="d-grid gap-2 mt-3">
+                                                <button className="btn btn-outline-info" onClick={() => navigate('managePatientRecords')}>Manage Patient Records</button>
+                                                {/* <button className="btn btn-outline-info" onClick={() => navigate('addConsultationPrescription')}>Add Consultation/Prescription</button> */}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div className="col-md-6">
                                     <div className="card h-100 shadow-sm rounded-3">
                                         <div className="card-body">
@@ -149,7 +178,10 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
                                         </div>
                                     </div>
                                 </div>
-                                <div className="col-md-6">
+                            </div>
+
+                            <div className="row g-4">
+                                <div className="col-md-12">
                                     <div className="card h-100 shadow-sm rounded-3">
                                         <div className="card-body">
                                             <h5 className="card-title fw-bold text-info">Reports & Feedback</h5>
@@ -178,6 +210,19 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
                 return <DoctorReportsPage navigate={navigate} />;
             case 'appointmentDetails':
                 return <DoctorAppointmentDetailsPage navigate={navigate} appointment={pageData?.appointment} />;
+            // NEW CASES FOR DOCTOR DASHBOARD
+            case 'managePatientRecords':
+                return <ManagePatientRecordsPage navigate={navigate} />;
+            case 'patientHealthDataView':
+                return <PatientHealthDataViewPage navigate={navigate} patientId={pageData.patientId} patientName={pageData.patientName} />;
+            case 'addPrescription':
+                return <AddPrescriptionPage navigate={navigate} patientId={pageData.patientId} patientName={pageData.patientName} appointmentId={pageData.appointmentId} />;
+            case 'addHealthRecord':
+                return <AddHealthRecordPage navigate={navigate} patientId={pageData.patientId} patientName={pageData.patientName} appointmentId={pageData.appointmentId} />;
+            case 'addConsultation':
+                return <AddConsultationPage navigate={navigate} patientId={pageData.patientId} patientName={pageData.patientName} appointmentId={pageData.appointmentId} />;
+            case 'prescriptionViewer': // NEW CASE for Prescription Viewer
+                return <PrescriptionViewerPage navigate={navigate} patientId={pageData.patientId} prescriptionId={pageData.prescriptionId} />;
             default:
                 return <MessageDisplay message={{ text: "Page not found.", type: "error" }} />;
         }
@@ -191,8 +236,8 @@ export const DoctorDashboard: React.FC<DashboardProps> = ({ navigate, currentPag
 };
 
 // My Appointments Page (Doctor)
-export const MyAppointmentsPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, db, appId } = useAuth();
+export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
+    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
     const [appointments, setAppointments] = useState<Appointment[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -222,6 +267,23 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string, data?: any)
             const snapshot = await getDocs(q);
             let fetchedAppointments: Appointment[] = [];
 
+            // Pre-fetch all patients and services
+            const patientsMap = new Map<string, UserProfile>();
+            const servicesMap = new Map<string, Service>();
+
+            const allUsersSnapshot = await getDocs(collectionGroup(db, 'users'));
+            allUsersSnapshot.docs.forEach(docSnap => {
+                const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                const pathSegments = docSnap.ref.path.split('/');
+                if (pathSegments[1] === appId) { // Ensure it belongs to this app's structure
+                    patientsMap.set(docSnap.id, profileData);
+                }
+            });
+
+            const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // CORRECTED PATH
+            servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
+
+
             for (const docSnap of snapshot.docs) {
                 const apptData = docSnap.data() as Appointment;
                 // Ensure the appointment belongs to the current app instance
@@ -230,19 +292,9 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string, data?: any)
                     continue; // Skip if not for this app instance
                 }
 
-                let serviceName = 'Unknown Service';
-                let patientName = 'Unknown Patient';
+                let serviceName = servicesMap.get(apptData.service_id)?.name || 'Unknown Service';
+                let patientName = patientsMap.get(apptData.patient_id)?.full_name || patientsMap.get(apptData.patient_id)?.email || 'Unknown Patient';
                 let addressDetails: Address | undefined;
-
-                // Fetch service details
-                const serviceDocRef = doc(db, `artifacts/${appId}/public/data/services`, apptData.service_id);
-                const serviceSnap = await getDoc(serviceDocRef);
-                serviceName = serviceSnap.exists() ? (serviceSnap.data() as Service).name : serviceName;
-
-                // Fetch patient details
-                const patientUserDocRef = doc(db, `artifacts/${appId}/users/${apptData.patient_id}/users`, apptData.patient_id);
-                const patientProfileSnap = await getDoc(patientUserDocRef);
-                patientName = patientProfileSnap.exists() ? (patientProfileSnap.data() as UserProfile).full_name || (patientProfileSnap.data() as UserProfile).email : patientName;
 
                 // Fetch address details (from patient's address collection)
                 if (apptData.address_id) {
@@ -266,6 +318,7 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string, data?: any)
         } catch (err: any) {
             console.error("Error fetching my appointments:", err);
             setError(err.message);
+            setMessage({ text: `Error fetching appointments: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -349,8 +402,8 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string, data?: any)
 };
 
 // Pending Appointments Page (Doctor)
-export const PendingAppointmentsPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, db, appId } = useAuth();
+export const PendingAppointmentsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
+    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
     const [pendingAppointments, setPendingAppointments] = useState<Appointment[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -374,6 +427,23 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string, data?:
             const snapshot = await getDocs(q);
             let fetchedAppointments: Appointment[] = [];
 
+            // Pre-fetch all patients and services
+            const patientsMap = new Map<string, UserProfile>();
+            const servicesMap = new Map<string, Service>();
+
+            const allUsersSnapshot = await getDocs(collectionGroup(db, 'users'));
+            allUsersSnapshot.docs.forEach(docSnap => {
+                const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                const pathSegments = docSnap.ref.path.split('/');
+                if (pathSegments[1] === appId) {
+                    patientsMap.set(docSnap.id, profileData);
+                }
+            });
+
+            const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // CORRECTED PATH
+            servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
+
+
             for (const docSnap of snapshot.docs) {
                 const apptData = docSnap.data() as Appointment;
                 // Ensure the appointment belongs to the current app instance
@@ -382,19 +452,9 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string, data?:
                     continue; // Skip if not for this app instance
                 }
 
-                let serviceName = 'Unknown Service';
-                let patientName = 'Unknown Patient';
+                let serviceName = servicesMap.get(apptData.service_id)?.name || 'Unknown Service';
+                let patientName = patientsMap.get(apptData.patient_id)?.full_name || patientsMap.get(apptData.patient_id)?.email || 'Unknown Patient';
                 let addressDetails: Address | undefined;
-
-                // Fetch service details
-                const serviceDocRef = doc(db, `artifacts/${appId}/public/data/services`, apptData.service_id);
-                const serviceSnap = await getDoc(serviceDocRef);
-                serviceName = serviceSnap.exists() ? (serviceSnap.data() as Service).name : serviceName;
-
-                // Fetch patient details
-                const patientUserDocRef = doc(db, `artifacts/${appId}/users/${apptData.patient_id}/users`, apptData.patient_id);
-                const patientProfileSnap = await getDoc(patientUserDocRef);
-                patientName = patientProfileSnap.exists() ? (patientProfileSnap.data() as UserProfile).full_name || (patientProfileSnap.data() as UserProfile).email : patientName;
 
                 // Fetch address details (from patient's address collection)
                 if (apptData.address_id) {
@@ -418,6 +478,7 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string, data?:
         } catch (err: any) {
             console.error("Error fetching pending appointments:", err);
             setError(err.message);
+            setMessage({ text: `Error fetching pending appointments: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -433,7 +494,7 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string, data?:
         setLoading(true);
         setError(null);
         if (!db || !appId || !user?.uid) {
-            setError("Firestore not initialized or user not logged in.");
+            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" }); // Use setMessage
             setLoading(false);
             return;
         }
@@ -447,11 +508,12 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string, data?:
                 assigned_at: serverTimestamp(),
                 updated_at: serverTimestamp(),
             });
-            alert(`Appointment for ${appointment.patientName} assigned to you.`);
+            setMessage({ text: `Appointment for ${appointment.patientName} assigned to you.`, type: "success" }); // Use setMessage
             fetchPendingAppointments(); // Refresh the list
         } catch (err: any) {
             console.error("Error assigning appointment:", err);
             setError(err.message);
+            setMessage({ text: `Error assigning appointment: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -515,8 +577,8 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string, data?:
 };
 
 // Manage Availability Page (Doctor)
-export const ManageAvailabilityPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, db, appId } = useAuth();
+export const ManageAvailabilityPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
+    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
     const [availability, setAvailability] = useState<any[]>([]); // State to hold doctor's availability
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -537,16 +599,23 @@ export const ManageAvailabilityPage: React.FC<{ navigate: (page: string, data?: 
             return;
         }
         try {
-            const availabilityDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/availability`, 'doctorAvailability');
-            const docSnap = await getDoc(availabilityDocRef);
+            // Availability is stored directly on the doctor's user profile as a JSON string
+            const userDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/users`, user.uid);
+            const docSnap = await getDoc(userDocRef);
             if (docSnap.exists()) {
-                setAvailability(docSnap.data().schedules || []);
+                const profile = docSnap.data() as UserProfile;
+                if (profile.availability_schedule) {
+                    setAvailability(JSON.parse(profile.availability_schedule));
+                } else {
+                    setAvailability([]);
+                }
             } else {
                 setAvailability([]);
             }
         } catch (err: any) {
             console.error("Error fetching availability:", err);
             setError(err.message);
+            setMessage({ text: `Error fetching availability: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -562,12 +631,12 @@ export const ManageAvailabilityPage: React.FC<{ navigate: (page: string, data?: 
         setLoading(true);
         setError(null);
         if (!db || !appId || !user?.uid || !newAvailability.date || newAvailability.time_slots.length === 0) {
-            setError("Please select a date and at least one time slot.");
+            setMessage({ text: "Please select a date and at least one time slot.", type: "error" }); // Use setMessage
             setLoading(false);
             return;
         }
         try {
-            const availabilityDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/availability`, 'doctorAvailability');
+            const userDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/users`, user.uid);
             // Check if the date already exists
             const existingScheduleIndex = availability.findIndex(s => s.date === newAvailability.date);
             let updatedSchedules;
@@ -583,14 +652,15 @@ export const ManageAvailabilityPage: React.FC<{ navigate: (page: string, data?: 
                 updatedSchedules = [...availability, { ...newAvailability, time_slots: newAvailability.time_slots.sort() }];
             }
 
-            await setDoc(availabilityDocRef, { schedules: updatedSchedules, updated_at: serverTimestamp() }, { merge: true });
-            alert('Availability updated successfully!');
+            await updateDoc(userDocRef, { availability_schedule: JSON.stringify(updatedSchedules), updated_at: serverTimestamp() });
+            setMessage({ text: 'Availability updated successfully!', type: 'success' }); // Use setMessage
             setNewAvailability({ date: '', time_slots: [] });
             setSelectedTimeSlot('');
-            fetchAvailability();
+            fetchAvailability(); // Re-fetch to ensure UI is in sync
         } catch (err: any) {
             console.error("Error adding availability:", err);
             setError(err.message);
+            setMessage({ text: `Error adding availability: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -600,12 +670,12 @@ export const ManageAvailabilityPage: React.FC<{ navigate: (page: string, data?: 
         setLoading(true);
         setError(null);
         if (!db || !appId || !user?.uid) {
-            setError("Firestore not initialized or user not logged in.");
+            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" }); // Use setMessage
             setLoading(false);
             return;
         }
         try {
-            const availabilityDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/availability`, 'doctorAvailability');
+            const userDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/users`, user.uid);
             const updatedSchedules = availability.map(schedule => {
                 if (schedule.date === date) {
                     return {
@@ -616,12 +686,13 @@ export const ManageAvailabilityPage: React.FC<{ navigate: (page: string, data?: 
                 return schedule;
             }).filter(schedule => schedule.time_slots.length > 0); // Remove dates with no slots left
 
-            await setDoc(availabilityDocRef, { schedules: updatedSchedules, updated_at: serverTimestamp() }, { merge: true });
-            alert('Time slot removed successfully!');
-            fetchAvailability();
+            await updateDoc(userDocRef, { availability_schedule: JSON.stringify(updatedSchedules), updated_at: serverTimestamp() });
+            setMessage({ text: 'Time slot removed successfully!', type: 'success' }); // Use setMessage
+            fetchAvailability(); // Re-fetch to ensure UI is in sync
         } catch (err: any) {
             console.error("Error removing time slot:", err);
             setError(err.message);
+            setMessage({ text: `Error removing time slot: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -756,7 +827,7 @@ export const ManageAvailabilityPage: React.FC<{ navigate: (page: string, data?: 
 };
 
 // Doctor Profile Page (Doctor)
-export const DoctorProfilePage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
+export const DoctorProfilePage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
     const { user, db, appId, setMessage } = useAuth();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
@@ -796,15 +867,15 @@ export const DoctorProfilePage: React.FC<{ navigate: (page: string, data?: any) 
     }, [user, db, appId]);
 
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFormData((prev: any) => ({ ...prev, [name]: value }));
+        const { name, value, type, checked } = e.target as HTMLInputElement;
+        setFormData((prev: any) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
     };
 
     const handleSaveProfile = async () => {
         setLoading(true);
         setError(null);
         if (!db || !appId || !user?.uid || !profile) {
-            setError("Firebase not initialized or user not logged in.");
+            setMessage({ text: "Firebase not initialized or user not logged in.", type: "error" });
             setLoading(false);
             return;
         }
@@ -865,6 +936,15 @@ export const DoctorProfilePage: React.FC<{ navigate: (page: string, data?: any) 
                             <strong>License Number:</strong> {profile.license_number || 'N/A'}
                         </div>
                         <div className="mb-3">
+                            <strong>Years of Experience:</strong> {profile.years_of_experience || 'N/A'}
+                        </div>
+                        <div className="mb-3">
+                            <strong>Bio:</strong> {profile.bio || 'N/A'}
+                        </div>
+                        <div className="mb-3">
+                            <strong>Available Now:</strong> {profile.is_available_now ? 'Yes' : 'No'}
+                        </div>
+                        <div className="mb-3">
                             <strong>Average Rating:</strong> {profile.average_rating ? profile.average_rating.toFixed(2) : 'N/A'} ({profile.total_reviews || 0} reviews)
                         </div>
                         <button className="btn btn-primary mt-3" onClick={() => setIsEditing(true)}>Edit Profile</button>
@@ -916,8 +996,8 @@ export const DoctorProfilePage: React.FC<{ navigate: (page: string, data?: any) 
 };
 
 // Patient Feedback Page (Doctor)
-export const PatientFeedbackPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, db, appId } = useAuth();
+export const PatientFeedbackPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
+    const { user, db, appId, setMessage } = useAuth(); // Added setMessage
     const [feedbacks, setFeedbacks] = useState<EnrichedFeedback[]>([]); // Use EnrichedFeedback
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -941,6 +1021,23 @@ export const PatientFeedbackPage: React.FC<{ navigate: (page: string, data?: any
                 );
                 const appointmentsSnapshot = await getDocs(qAppointments);
 
+                // Pre-fetch all patients and services once
+                const patientsMap = new Map<string, UserProfile>();
+                const servicesMap = new Map<string, Service>();
+
+                const allUsersSnapshot = await getDocs(collectionGroup(db, 'users'));
+                allUsersSnapshot.docs.forEach(docSnap => {
+                    const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) {
+                        patientsMap.set(docSnap.id, profileData);
+                    }
+                });
+
+                const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // CORRECTED PATH
+                servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
+
+
                 const feedbackPromises = appointmentsSnapshot.docs.map(async (apptDoc) => {
                     const apptData = apptDoc.data() as Appointment;
                     // Ensure the appointment belongs to the current app instance
@@ -959,16 +1056,12 @@ export const PatientFeedbackPage: React.FC<{ navigate: (page: string, data?: any
 
                     if (!feedbackSnap.empty) {
                         const feedbackData = feedbackSnap.docs[0].data() as Feedback;
-                        
-                        // Fetch patient name
-                        const patientDocRef = doc(db, `artifacts/${appId}/users/${apptData.patient_id}/users`, apptData.patient_id);
-                        const patientSnap = await getDoc(patientDocRef);
-                        const patientName = patientSnap.exists() ? (patientSnap.data() as UserProfile).full_name || (patientSnap.data() as UserProfile).email : 'Unknown Patient';
 
-                        // Fetch service name
-                        const serviceDocRef = doc(db, `artifacts/${appId}/public/data/services`, apptData.service_id);
-                        const serviceSnap = await getDoc(serviceDocRef);
-                        const serviceName = serviceSnap.exists() ? (serviceSnap.data() as Service).name : 'Unknown Service';
+                        // Get patient name from pre-fetched map
+                        const patientName = patientsMap.get(apptData.patient_id)?.full_name || patientsMap.get(apptData.patient_id)?.email || 'Unknown Patient';
+
+                        // Get service name from pre-fetched map
+                        const serviceName = servicesMap.get(apptData.service_id)?.name || 'Unknown Service';
 
                         return {
                             ...feedbackData,
@@ -986,6 +1079,7 @@ export const PatientFeedbackPage: React.FC<{ navigate: (page: string, data?: any
             } catch (err: any) {
                 console.error("Error fetching patient feedback:", err);
                 setError(err.message);
+                setMessage({ text: `Error fetching patient feedback: ${err.message}`, type: "error" }); // Use setMessage
             } finally {
                 setLoading(false);
             }
@@ -1047,7 +1141,7 @@ export const PatientFeedbackPage: React.FC<{ navigate: (page: string, data?: any
 };
 
 // Doctor Reports Page (Doctor) - Placeholder
-export const DoctorReportsPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
+export const DoctorReportsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
     const { user } = useAuth();
     if (!user || user.profile?.role !== 'doctor') {
         return <MessageDisplay message={{ text: "Access Denied. You must be a Doctor to view this page.", type: "error" }} />;
@@ -1066,8 +1160,8 @@ export const DoctorReportsPage: React.FC<{ navigate: (page: string, data?: any) 
     );
 };
 
-// Doctor Appointment Details Page
-export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string, data?: any) => void; appointment?: Appointment }> = ({ navigate, appointment: initialAppointment }) => {
+// Doctor Appointment Details Page (Doctor)
+export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | number, data?: any) => void; appointment?: Appointment }> = ({ navigate, appointment: initialAppointment }) => { // Updated navigate type
     const { user, db, appId, setMessage } = useAuth();
     const [appointment, setAppointment] = useState<Appointment | undefined>(initialAppointment);
     const [loading, setLoading] = useState(false);
@@ -1109,7 +1203,7 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string, d
                     let addressDetails: Address | undefined;
 
                     // Fetch service details
-                    const serviceDocRef = doc(db, `artifacts/${appId}/public/data/services`, apptData.service_id);
+                    const serviceDocRef = doc(db, `artifacts/${appId}/services`, apptData.service_id); // CORRECTED PATH
                     const serviceSnap = await getDoc(serviceDocRef);
                     serviceName = serviceSnap.exists() ? (serviceSnap.data() as Service).name : serviceName;
 
@@ -1155,7 +1249,7 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string, d
         setLoading(true);
         setError(null);
         if (!appointment?.id || !appointment.patient_id || !db || !appId || !user?.uid) {
-            setError("Missing appointment ID/patient ID or Firebase not initialized.");
+            setMessage({ text: "Missing appointment ID/patient ID or Firebase not initialized.", type: "error" });
             setLoading(false);
             return;
         }
@@ -1167,7 +1261,7 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string, d
                 updated_at: serverTimestamp(),
             });
             setAppointment(prev => prev ? { ...prev, status: newStatus } : prev); // Update local state
-            setMessage({ text: `Appointment status updated to ${newStatus.replace(/_/g, ' ').toUpperCase()}.`, type: "success" });
+            setMessage({ text: `Appointment status updated to ${newStatus?.replace(/_/g, ' ').toUpperCase()}.`, type: "success" });
             setShowConfirmModal(false);
             setShowCancelModal(false);
             setShowCompleteModal(false);
@@ -1217,7 +1311,7 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string, d
                     <strong>Estimated Cost:</strong> ₹{appointment.estimated_cost?.toFixed(2) || 'N/A'}
                 </div>
                 <div className="mb-3">
-                    <strong>Current Status:</strong> <span className={`badge ${getStatusBadgeClass(appointment.status)}`}>{appointment.status.replace(/_/g, ' ').toUpperCase()}</span>
+                    <strong>Current Status:</strong> <span className={`badge ${getStatusBadgeClass(appointment.status)}`}>{appointment.status?.replace(/_/g, ' ').toUpperCase()}</span>
                 </div>
                 <div className="mb-3">
                     <strong>Payment Status:</strong> <span className={`badge ${appointment.payment_status === 'paid' ? 'bg-success' : 'bg-secondary'}`}>{appointment.payment_status.toUpperCase()}</span>
@@ -1243,6 +1337,33 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string, d
                         <button className="btn btn-danger" onClick={() => setShowCancelModal(true)} disabled={loading}>Cancel Appointment</button>
                     )}
                 </div>
+
+                {/* NEW: Buttons for adding patient data/consultation */}
+                {appointment.status === 'completed' && (
+                    <div className="mt-4 pt-4 border-top">
+                        <h4 className="h5 fw-bold text-info mb-3">Post-Appointment Actions</h4>
+                        <div className="d-flex flex-wrap gap-2">
+                            <button
+                                className="btn btn-outline-info"
+                                onClick={() => navigate('addConsultation', { patientId: appointment.patient_id, patientName: appointment.patientName, appointmentId: appointment.id })}
+                            >
+                                Add Consultation Notes
+                            </button>
+                            <button
+                                className="btn btn-outline-info"
+                                onClick={() => navigate('addPrescription', { patientId: appointment.patient_id, patientName: appointment.patientName, appointmentId: appointment.id })}
+                            >
+                                Add Prescription
+                            </button>
+                            <button
+                                className="btn btn-outline-info"
+                                onClick={() => navigate('addHealthRecord', { patientId: appointment.patient_id, patientName: appointment.patientName, appointmentId: appointment.id })}
+                            >
+                                Add Health Record
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {showConfirmModal && (
@@ -1280,6 +1401,681 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string, d
 
             <div className="d-flex justify-content-center mt-4">
                 <button className="btn btn-link" onClick={() => navigate('myAppointments')}>Back to My Appointments</button>
+            </div>
+        </div>
+    );
+};
+
+// --- NEW COMPONENTS FOR DOCTOR HEALTH DATA MANAGEMENT ---
+
+// Manage Patient Records Page (Doctor)
+export const ManagePatientRecordsPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // Updated navigate type
+    const { user, db, appId, setMessage } = useAuth();
+    const [patients, setPatients] = useState<UserProfile[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filteredPatients, setFilteredPatients] = useState<UserProfile[]>([]);
+
+    useEffect(() => {
+        const fetchPatients = async () => {
+            setLoading(true);
+            setError(null);
+            if (!db || !appId || !user?.uid) {
+                setError("Firestore not initialized or user not logged in.");
+                setLoading(false);
+                return;
+            }
+            try {
+                // Fetch all patient profiles
+                const patientsQuery = query(
+                    collectionGroup(db, 'users'),
+                    where('role', '==', 'patient')
+                );
+                const snapshot = await getDocs(patientsQuery);
+                const fetchedPatients: UserProfile[] = [];
+                snapshot.docs.forEach(docSnap => {
+                    const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) { // Ensure it belongs to this app's structure
+                        fetchedPatients.push(profileData);
+                    }
+                });
+                setPatients(fetchedPatients);
+                setFilteredPatients(fetchedPatients); // Initialize filtered list
+            } catch (err: any) {
+                console.error("Error fetching patients:", err);
+                setError(err.message);
+                setMessage({ text: `Error fetching patients: ${err.message}`, type: "error" });
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (user && db && appId) {
+            fetchPatients();
+        }
+    }, [user, db, appId]);
+
+    useEffect(() => {
+        // Filter patients based on search term
+        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+        const results = patients.filter(patient =>
+            (patient.full_name?.toLowerCase().includes(lowerCaseSearchTerm) ||
+             patient.email.toLowerCase().includes(lowerCaseSearchTerm) ||
+             patient.phone_number?.toLowerCase().includes(lowerCaseSearchTerm))
+        );
+        setFilteredPatients(results);
+    }, [searchTerm, patients]);
+
+    if (loading) return (
+        <div className="d-flex justify-content-center align-items-center min-vh-100">
+            <div className="text-center p-5">
+                <LoadingSpinner /><p className="mt-3 text-muted">Loading patients...</p>
+            </div>
+        </div>
+    );
+    if (error) return <MessageDisplay message={{ text: error, type: "error" }} />;
+    if (!user || user.profile?.role !== 'doctor') {
+        return <MessageDisplay message={{ text: "Access Denied. You must be a Doctor to view this page.", type: "error" }} />;
+    }
+
+    return (
+        <div className="container py-4">
+            <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
+                <h2 className="h3 fw-bold text-info mb-4 text-center">Manage Patient Records</h2>
+
+                <div className="mb-4">
+                    <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Search patients by name, email, or phone..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+
+                {filteredPatients.length === 0 ? (
+                    <p className="text-muted text-center">No patients found matching your search.</p>
+                ) : (
+                    <div className="list-group">
+                        {filteredPatients.map(patient => (
+                            <button
+                                key={patient.id}
+                                className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                onClick={() => navigate('patientHealthDataView', { patientId: patient.id, patientName: patient.full_name || patient.email })}
+                            >
+                                <div>
+                                    <h5 className="mb-1">{patient.full_name || patient.email}</h5>
+                                    <small className="text-muted">{patient.email} {patient.phone_number && `| ${patient.phone_number}`}</small>
+                                </div>
+                                <span className="badge bg-primary rounded-pill">View Records</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+            <div className="d-flex justify-content-center mt-4">
+                <button className="btn btn-link" onClick={() => navigate('dashboard')}>Back to Dashboard</button>
+            </div>
+        </div>
+    );
+};
+
+// Patient Health Data View Page (Doctor)
+export const PatientHealthDataViewPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string }> = ({ navigate, patientId, patientName }) => { // Updated navigate type
+    const { user, db, appId, setMessage } = useAuth();
+    const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+    const [healthRecords, setHealthRecords] = useState<HealthRecord[]>([]);
+    const [consultations, setConsultations] = useState<Consultation[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchPatientData = async () => {
+            setLoading(true);
+            setError(null);
+            if (!db || !appId || !user?.uid || !patientId) {
+                setError("Firebase not initialized, user not logged in, or patient ID missing.");
+                setLoading(false);
+                return;
+            }
+            try {
+                // Pre-fetch all doctors and services once for enrichment
+                const doctorsMap = new Map<string, UserProfile>();
+                const servicesMap = new Map<string, Service>();
+
+                const allUsersSnapshot = await getDocs(collectionGroup(db, 'users'));
+                allUsersSnapshot.docs.forEach(docSnap => {
+                    const profileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId && profileData.role === 'doctor') {
+                        doctorsMap.set(docSnap.id, profileData);
+                    }
+                });
+
+                const servicesSnapshot = await getDocs(collection(db, `artifacts/${appId}/services`)); // CORRECTED PATH
+                servicesSnapshot.docs.forEach(docSnap => servicesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Service));
+
+
+                // Fetch Prescriptions for the patient
+                const prescriptionsCollectionRef = collection(db, `artifacts/${appId}/users/${patientId}/prescriptions`);
+                const prescriptionsSnapshot = await getDocs(prescriptionsCollectionRef);
+                const fetchedPrescriptions: Prescription[] = [];
+                for (const docSnap of prescriptionsSnapshot.docs) {
+                    const prescriptionData = docSnap.data() as Prescription;
+                    const doctorName = doctorsMap.get(prescriptionData.doctor_id)?.full_name || doctorsMap.get(prescriptionData.doctor_id)?.email || 'Unknown Doctor';
+                    fetchedPrescriptions.push({ ...prescriptionData, id: docSnap.id, doctorName });
+                }
+                setPrescriptions(fetchedPrescriptions);
+
+                // Fetch Health Records for the patient
+                const healthRecordsCollectionRef = collection(db, `artifacts/${appId}/users/${patientId}/health_records`);
+                const healthRecordsSnapshot = await getDocs(healthRecordsCollectionRef);
+                const fetchedHealthRecords: HealthRecord[] = [];
+                for (const docSnap of healthRecordsSnapshot.docs) {
+                    const recordData = docSnap.data() as HealthRecord;
+                    const doctorName = recordData.doctor_id ? (doctorsMap.get(recordData.doctor_id)?.full_name || doctorsMap.get(recordData.doctor_id)?.email || 'Unknown Doctor') : 'Patient Added';
+                    fetchedHealthRecords.push({ ...recordData, id: docSnap.id, doctorName });
+                }
+                setHealthRecords(fetchedHealthRecords);
+
+                // Fetch Consultations for the patient
+                const consultationsCollectionRef = collection(db, `artifacts/${appId}/users/${patientId}/consultations`);
+                const consultationsSnapshot = await getDocs(consultationsCollectionRef);
+                const fetchedConsultations: Consultation[] = [];
+                for (const docSnap of consultationsSnapshot.docs) {
+                    const consultationData = docSnap.data() as Consultation;
+                    const doctorName = doctorsMap.get(consultationData.doctor_id)?.full_name || doctorsMap.get(consultationData.doctor_id)?.email || 'Unknown Doctor';
+
+                    let serviceName = 'N/A';
+                    if (consultationData.appointment_id) {
+                        const appointmentDocRef = doc(db, `artifacts/${appId}/users/${patientId}/appointments`, consultationData.appointment_id);
+                        const appointmentSnap = await getDoc(appointmentDocRef);
+                        if (appointmentSnap.exists()) {
+                            const serviceId = (appointmentSnap.data() as Appointment).service_id;
+                            serviceName = servicesMap.get(serviceId)?.name || 'Unknown Service';
+                        }
+                    }
+                    fetchedConsultations.push({ ...consultationData, id: docSnap.id, doctorName, serviceName });
+                }
+                setConsultations(fetchedConsultations);
+
+            } catch (err: any) {
+                console.error("Error fetching patient health data:", err);
+                setError(err.message);
+                setMessage({ text: `Error fetching patient data: ${err.message}`, type: "error" });
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (user && db && appId && patientId) {
+            fetchPatientData();
+        }
+    }, [user, db, appId, patientId]);
+
+    if (loading) return (
+        <div className="d-flex justify-content-center align-items-center min-vh-100">
+            <div className="text-center p-5">
+                <LoadingSpinner /><p className="mt-3 text-muted">Loading patient health data...</p>
+            </div>
+        </div>
+    );
+    if (error) return <MessageDisplay message={{ text: error, type: "error" }} />;
+    if (!user || user.profile?.role !== 'doctor') {
+        return <MessageDisplay message={{ text: "Access Denied. You must be a Doctor to view this page.", type: "error" }} />;
+    }
+
+    return (
+        <div className="container py-4">
+            <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
+                <h2 className="h3 fw-bold text-info mb-4 text-center">Health Data for {patientName}</h2>
+
+                <div className="d-flex justify-content-center gap-2 mb-4 flex-wrap">
+                    <button className="btn btn-outline-primary" onClick={() => navigate('addPrescription', { patientId, patientName })}>Add Prescription</button>
+                    <button className="btn btn-outline-primary" onClick={() => navigate('addHealthRecord', { patientId, patientName })}>Add Health Record</button>
+                    {/* Consultation notes are typically added via an appointment, so not a direct "add" here unless it's a general consultation */}
+                    {/* <button className="btn btn-outline-primary" onClick={() => navigate('addConsultation', { patientId, patientName })}>Add Consultation</button> */}
+                </div>
+
+                <h4 className="h5 fw-bold text-primary mb-3">Prescriptions</h4>
+                {prescriptions.length === 0 ? (
+                    <p className="text-muted">No prescriptions found for this patient.</p>
+                ) : (
+                    <div className="table-responsive mb-4">
+                        <table className="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Prescribed Date</th>
+                                    <th>Expires Date</th>
+                                    <th>Prescribed By</th> {/* Added back for clarity */}
+                                    <th>Medications</th>
+                                    <th>Actions</th> {/* NEW: Actions column */}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {prescriptions.map(p => (
+                                    <tr key={p.id}>
+                                        <td>{p.prescribed_date}</td>
+                                        <td>{p.expires_date || 'N/A'}</td>
+                                        <td>{p.doctorName}</td> {/* Display doctor name */}
+                                        <td>
+                                            {p.medications && p.medications.length > 0 ? (
+                                                <ul className="list-unstyled mb-0">
+                                                    {p.medications.map((med, idx) => (
+                                                        <li key={idx}>
+                                                            <strong>{med.medication_name}</strong>: {med.dosage}, {med.frequency} ({med.instructions})
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            ) : 'N/A'}
+                                        </td>
+                                        <td>
+                                            <button
+                                                className="btn btn-sm btn-outline-info"
+                                                onClick={() => navigate('prescriptionViewer', { patientId, prescriptionId: p.id })}
+                                            >
+                                                View
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                <h4 className="h5 fw-bold text-primary mb-3">Health Records</h4>
+                {healthRecords.length === 0 ? (
+                    <p className="text-muted">No health records found for this patient.</p>
+                ) : (
+                    <div className="table-responsive mb-4">
+                        <table className="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Title</th>
+                                    <th>Description</th>
+                                    <th>Added By</th> {/* Added back for clarity */}
+                                    <th>Attachment</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {healthRecords.map(r => (
+                                    <tr key={r.id}>
+                                        <td>{r.record_date}</td>
+                                        <td>{r.record_type.replace(/_/g, ' ').toUpperCase()}</td>
+                                        <td>{r.title || 'N/A'}</td>
+                                        <td>{r.description}</td>
+                                        <td>{r.doctorName}</td> {/* Display doctor name */}
+                                        <td>
+                                            {r.attachment_url ? (
+                                                <a href={r.attachment_url} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline-primary">View</a>
+                                            ) : 'N/A'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                <h4 className="h5 fw-bold text-primary mb-3">Consultations</h4>
+                {consultations.length === 0 ? (
+                    <p className="text-muted">No consultation notes found for this patient.</p>
+                ) : (
+                    <div className="table-responsive mb-4">
+                        <table className="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Time</th>
+                                    <th>Doctor</th> {/* Added back for clarity */}
+                                    <th>Service</th> {/* Added back for clarity */}
+                                    <th>Diagnosis</th>
+                                    <th>Recommendations</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {consultations.map(c => (
+                                    <tr key={c.id}>
+                                        <td>{c.consultation_date}</td>
+                                        <td>{c.consultation_time}</td>
+                                        <td>{c.doctorName}</td> {/* Display doctor name */}
+                                        <td>{c.serviceName}</td> {/* Display service name */}
+                                        <td>{c.diagnosis || 'N/A'}</td>
+                                        <td>{c.recommendations || 'N/A'}</td>
+                                        <td>{c.notes}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+            <div className="d-flex justify-content-center mt-4">
+                <button className="btn btn-link" onClick={() => navigate('managePatientRecords')}>Back to Patient List</button>
+            </div>
+        </div>
+    );
+};
+
+// Add Prescription Page (Doctor) - UPDATED FOR MULTIPLE MEDICATIONS
+export const AddPrescriptionPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string; appointmentId?: string }> = ({ navigate, patientId, patientName, appointmentId }) => { // Updated navigate type
+    const { user, db, appId, setMessage, message } = useAuth();
+    const [loading, setLoading] = useState(false);
+    const [prescribedDate, setPrescribedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [expiresDate, setExpiresDate] = useState('');
+    const [medications, setMedications] = useState<MedicationItem[]>([]);
+    const [currentMedication, setCurrentMedication] = useState<MedicationItem>({
+        medication_name: '',
+        dosage: '',
+        frequency: '',
+        instructions: '',
+    });
+
+    const handleMedicationChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        setCurrentMedication(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleAddMedication = () => {
+        if (currentMedication.medication_name && currentMedication.dosage && currentMedication.frequency && currentMedication.instructions) {
+            setMedications(prev => [...prev, currentMedication]);
+            setCurrentMedication({
+                medication_name: '',
+                dosage: '',
+                frequency: '',
+                instructions: '',
+            });
+        } else {
+            setMessage({ text: "Please fill all fields for the current medication before adding.", type: "warning" });
+        }
+    };
+
+    const handleRemoveMedication = (index: number) => {
+        setMedications(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleSubmitPrescription = async () => {
+        setLoading(true);
+        setMessage({ text: '', type: 'info' });
+
+        if (!db || !appId || !user?.uid || !patientId || medications.length === 0 || !prescribedDate) {
+            setMessage({ text: "Please add at least one medication and fill the prescribed date.", type: "error" });
+            setLoading(false);
+            return;
+        }
+
+        try {
+            const prescriptionsCollectionRef = collection(db, `artifacts/${appId}/users/${patientId}/prescriptions`);
+            await addDoc(prescriptionsCollectionRef, {
+                patient_id: patientId,
+                doctor_id: user.uid,
+                appointment_id: appointmentId || null, // Link to appointment if provided
+                medications: medications, // Save the array of medications
+                prescribed_date: prescribedDate,
+                expires_date: expiresDate || null,
+                created_at: serverTimestamp(),
+                updated_at: serverTimestamp(),
+            });
+            setMessage({ text: 'Prescription added successfully!', type: 'success' });
+            navigate('patientHealthDataView', { patientId, patientName }); // Go back to patient's health data view
+        } catch (err: any) {
+            console.error("Error adding prescription:", err);
+            setMessage({ text: `Failed to add prescription: ${err.message}`, type: "error" });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="container py-4">
+            <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
+                <h2 className="h3 fw-bold text-info mb-4 text-center">Add Prescription for {patientName}</h2>
+                {appointmentId && <p className="text-muted text-center">Related to Appointment ID: {appointmentId}</p>}
+
+                <MessageDisplay message={message} />
+
+                <div className="mb-3">
+                    <label htmlFor="prescribed_date" className="form-label">Prescribed Date:</label>
+                    <input type="date" className="form-control" id="prescribed_date" name="prescribed_date" value={prescribedDate} onChange={(e) => setPrescribedDate(e.target.value)} required />
+                </div>
+                <div className="mb-3">
+                    <label htmlFor="expires_date" className="form-label">Expires Date (Optional):</label>
+                    <input type="date" className="form-control" id="expires_date" name="expires_date" value={expiresDate} onChange={(e) => setExpiresDate(e.target.value)} />
+                </div>
+
+                <hr className="my-4" />
+                <h4 className="h5 fw-bold text-secondary mb-3">Add Medications</h4>
+
+                <div className="border p-3 rounded mb-3 bg-light">
+                    <div className="mb-3">
+                        <label htmlFor="current_med_name" className="form-label">Medication Name:</label>
+                        <input type="text" className="form-control" id="current_med_name" name="medication_name" value={currentMedication.medication_name} onChange={handleMedicationChange} placeholder="e.g., Amoxicillin" />
+                    </div>
+                    <div className="mb-3">
+                        <label htmlFor="current_dosage" className="form-label">Dosage:</label>
+                        <input type="text" className="form-control" id="current_dosage" name="dosage" value={currentMedication.dosage} onChange={handleMedicationChange} placeholder="e.g., 250mg" />
+                    </div>
+                    <div className="mb-3">
+                        <label htmlFor="current_frequency" className="form-label">Frequency:</label>
+                        <input type="text" className="form-control" id="current_frequency" name="frequency" value={currentMedication.frequency} onChange={handleMedicationChange} placeholder="e.g., Twice daily" />
+                    </div>
+                    <div className="mb-3">
+                        <label htmlFor="current_instructions" className="form-label">Instructions:</label>
+                        <textarea className="form-control" id="current_instructions" name="instructions" rows={2} value={currentMedication.instructions} onChange={handleMedicationChange} placeholder="e.g., Take with food"></textarea>
+                    </div>
+                    <button type="button" className="btn btn-outline-secondary w-100" onClick={handleAddMedication}>Add Medication</button>
+                </div>
+
+                <h5 className="fw-bold text-primary mb-3">Medications in this Prescription:</h5>
+                {medications.length === 0 ? (
+                    <p className="text-muted text-center">No medications added yet.</p>
+                ) : (
+                    <ul className="list-group mb-4">
+                        {medications.map((med, index) => (
+                            <li key={index} className="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>{med.medication_name}</strong>
+                                    <br />
+                                    <small className="text-muted">{med.dosage}, {med.frequency} ({med.instructions})</small>
+                                </div>
+                                <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => handleRemoveMedication(index)}>Remove</button>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+
+                <button className="btn btn-primary w-100 mt-3" onClick={handleSubmitPrescription} disabled={loading || medications.length === 0}>
+                    {loading ? <LoadingSpinner /> : 'Create Prescription'}
+                </button>
+            </div>
+            <div className="d-flex justify-content-center mt-4">
+                <button className="btn btn-link" onClick={() => navigate('patientHealthDataView', { patientId, patientName })}>Back to Patient Data</button>
+            </div>
+        </div>
+    );
+};
+
+// Add Health Record Page (Doctor)
+export const AddHealthRecordPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string; appointmentId?: string }> = ({ navigate, patientId, patientName, appointmentId }) => { // Updated navigate type
+    const { user, db, appId, setMessage, message } = useAuth();
+    const [loading, setLoading] = useState(false);
+    const [formData, setFormData] = useState<Partial<HealthRecord>>({
+        record_type: 'diagnosis',
+        record_date: new Date().toISOString().split('T')[0],
+        title: '',
+        description: '',
+        attachment_url: '',
+    });
+
+    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSubmitHealthRecord = async () => {
+        setLoading(true);
+        setMessage({ text: '', type: 'info' });
+
+        if (!db || !appId || !user?.uid || !patientId || !formData.record_type || !formData.record_date || !formData.description) {
+            setMessage({ text: "Please fill all required fields for the health record.", type: "error" });
+            setLoading(false);
+            return;
+        }
+
+        try {
+            const healthRecordsCollectionRef = collection(db, `artifacts/${appId}/users/${patientId}/health_records`);
+            await addDoc(healthRecordsCollectionRef, {
+                ...formData,
+                patient_id: patientId,
+                doctor_id: user.uid, // Doctor is adding this record
+                created_at: serverTimestamp(),
+                updated_at: serverTimestamp(),
+            });
+            setMessage({ text: 'Health record added successfully!', type: 'success' });
+            navigate('patientHealthDataView', { patientId, patientName });
+        } catch (err: any) {
+            console.error("Error adding health record:", err);
+            setMessage({ text: `Failed to add health record: ${err.message}`, type: "error" });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="container py-4">
+            <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
+                <h2 className="h3 fw-bold text-info mb-4 text-center">Add Health Record for {patientName}</h2>
+
+                <MessageDisplay message={message} />
+
+                <div className="mb-3">
+                    <label htmlFor="record_type" className="form-label">Record Type:</label>
+                    <select className="form-select" id="record_type" name="record_type" value={formData.record_type || ''} onChange={handleFormChange} required>
+                        <option value="diagnosis">Diagnosis</option>
+                        <option value="test_result">Test Result</option>
+                        <option value="allergy">Allergy</option>
+                        <option value="medical_history">Medical History</option>
+                        <option value="vaccination">Vaccination</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div className="mb-3">
+                    <label htmlFor="record_date" className="form-label">Record Date:</label>
+                    <input type="date" className="form-control" id="record_date" name="record_date" value={formData.record_date || ''} onChange={handleFormChange} required />
+                </div>
+                <div className="mb-3">
+                    <label htmlFor="title" className="form-label">Title (Optional):</label>
+                    <input type="text" className="form-control" id="title" name="title" value={formData.title || ''} onChange={handleFormChange} placeholder="e.g., Initial Consultation Diagnosis" />
+                </div>
+                <div className="mb-3">
+                    <label htmlFor="description" className="form-label">Description:</label>
+                    <textarea className="form-control" id="description" name="description" rows={5} value={formData.description || ''} onChange={handleFormChange} required></textarea>
+                </div>
+                <div className="mb-3">
+                    <label htmlFor="attachment_url" className="form-label">Attachment URL (Optional):</label>
+                    <input type="url" className="form-control" id="attachment_url" name="attachment_url" value={formData.attachment_url || ''} onChange={handleFormChange} placeholder="Link to a report PDF, image, etc." />
+                </div>
+
+                <button className="btn btn-primary w-100 mt-3" onClick={handleSubmitHealthRecord} disabled={loading}>
+                    {loading ? <LoadingSpinner /> : 'Add Health Record'}
+                </button>
+            </div>
+            <div className="d-flex justify-content-center mt-4">
+                <button className="btn btn-link" onClick={() => navigate('patientHealthDataView', { patientId, patientName })}>Back to Patient Data</button>
+            </div>
+        </div>
+    );
+};
+
+// Add Consultation Page (Doctor)
+export const AddConsultationPage: React.FC<{ navigate: (page: string | number, data?: any) => void; patientId: string; patientName: string; appointmentId: string }> = ({ navigate, patientId, patientName, appointmentId }) => { // Updated navigate type
+    const { user, db, appId, setMessage, message } = useAuth();
+    const [loading, setLoading] = useState(false);
+    const [formData, setFormData] = useState<Partial<Consultation>>({
+        consultation_date: new Date().toISOString().split('T')[0],
+        consultation_time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+        notes: '',
+        diagnosis: '',
+        recommendations: '',
+    });
+
+    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSubmitConsultation = async () => {
+        setLoading(true);
+        setMessage({ text: '', type: 'info' });
+
+        if (!db || !appId || !user?.uid || !patientId || !appointmentId || !formData.notes || !formData.consultation_date || !formData.consultation_time) {
+            setMessage({ text: "Please fill all required fields for the consultation notes.", type: "error" });
+            setLoading(false);
+            return;
+        }
+
+        try {
+            const consultationsCollectionRef = collection(db, `artifacts/${appId}/users/${patientId}/consultations`);
+            await addDoc(consultationsCollectionRef, {
+                ...formData,
+                patient_id: patientId,
+                doctor_id: user.uid,
+                appointment_id: appointmentId,
+                created_at: serverTimestamp(),
+                updated_at: serverTimestamp(),
+            });
+            setMessage({ text: 'Consultation notes added successfully!', type: 'success' });
+            // Navigate back to appointment details or patient health data view
+            navigate('appointmentDetails', { appointment: { id: appointmentId, patient_id: patientId } });
+        } catch (err: any) {
+            console.error("Error adding consultation:", err);
+            setMessage({ text: `Failed to add consultation: ${err.message}`, type: "error" });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="container py-4">
+            <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
+                <h2 className="h3 fw-bold text-info mb-4 text-center">Add Consultation Notes for {patientName}</h2>
+                <p className="text-muted text-center">For Appointment ID: {appointmentId}</p>
+
+                <MessageDisplay message={message} />
+
+                <div className="mb-3">
+                    <label htmlFor="consultation_date" className="form-label">Consultation Date:</label>
+                    <input type="date" className="form-control" id="consultation_date" name="consultation_date" value={formData.consultation_date || ''} onChange={handleFormChange} required />
+                </div>
+                <div className="mb-3">
+                    <label htmlFor="consultation_time" className="form-label">Consultation Time:</label>
+                    <input type="time" className="form-control" id="consultation_time" name="consultation_time" value={formData.consultation_time || ''} onChange={handleFormChange} required />
+                </div>
+                <div className="mb-3">
+                    <label htmlFor="notes" className="form-label">Notes:</label>
+                    <textarea className="form-control" id="notes" name="notes" rows={5} value={formData.notes || ''} onChange={handleFormChange} required></textarea>
+                </div>
+                <div className="mb-3">
+                    <label htmlFor="diagnosis" className="form-label">Diagnosis (Optional):</label>
+                    <input type="text" className="form-control" id="diagnosis" name="diagnosis" value={formData.diagnosis || ''} onChange={handleFormChange} />
+                </div>
+                <div className="mb-3">
+                    <label htmlFor="recommendations" className="form-label">Recommendations (Optional):</label>
+                    <textarea className="form-control" id="recommendations" name="recommendations" rows={3} value={formData.recommendations || ''} onChange={handleFormChange}></textarea>
+                </div>
+
+                <button className="btn btn-primary w-100 mt-3" onClick={handleSubmitConsultation} disabled={loading}>
+                    {loading ? <LoadingSpinner /> : 'Add Consultation Notes'}
+                </button>
+            </div>
+            <div className="d-flex justify-content-center mt-4">
+                <button className="btn btn-link" onClick={() => navigate('appointmentDetails', { appointment: { id: appointmentId, patient_id: patientId } })}>Back to Appointment Details</button>
             </div>
         </div>
     );

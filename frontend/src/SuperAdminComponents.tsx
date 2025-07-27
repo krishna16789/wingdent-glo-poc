@@ -1,15 +1,19 @@
 // frontend/src/SuperAdminComponents.tsx
 import React, { useState, useEffect } from 'react';
-import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp, collectionGroup, Timestamp, setDoc } from 'firebase/firestore'; // Import Timestamp
-import { useAuth } from './AuthContext';
+import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp, collectionGroup, Timestamp, setDoc } from 'firebase/firestore';
+import { useAuth } from './AuthContext'; // Import UserProfile from AuthContext
 import { LoadingSpinner, MessageDisplay, CustomModal } from './CommonComponents';
-import { Service, Offer, Appointment, Payment, FeeConfiguration, UserProfile } from './types'; // Import necessary types
-import { ServiceManagementPage, OfferManagementPage, AppointmentOversightPage } from './AdminComponents';
+import { Service, Offer, Appointment, Payment, FeeConfiguration, Prescription, HealthRecord, Consultation, UserProfile } from './types'; // Import necessary types
+// Import Admin's components that Superadmin reuses
+import { ServiceManagementPage, OfferManagementPage, AppointmentOversightPage, AdminPatientOversightPage, AdminPatientHealthDataViewPage } from './AdminComponents';
 import { DashboardProps } from './PatientComponents'; // Import DashboardProps for consistency
 
+// Import the new PrescriptionViewerPage
+import { PrescriptionViewerPage } from './PrescriptionViewerPage'; // NEW IMPORT
+
 // Superadmin User Management Page (more privileges than Admin's UserManagement)
-export const SuperAdminUserManagementPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, message, db, appId } = useAuth();
+export const SuperAdminUserManagementPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
+    const { user, message, db, appId, setMessage } = useAuth(); // Added setMessage
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -48,13 +52,14 @@ export const SuperAdminUserManagementPage: React.FC<{ navigate: (page: string, d
         } catch (err: any) {
             console.error("Error fetching users:", err);
             setError(err.message);
+            setMessage({ text: `Error fetching users: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        if (user && db && appId) { // Ensure db and appId are available
+        if (user && db && appId) {
             fetchUsers();
         }
     }, [user, db, appId, filterRole]);
@@ -72,8 +77,8 @@ export const SuperAdminUserManagementPage: React.FC<{ navigate: (page: string, d
             years_of_experience: userToEdit.years_of_experience,
             bio: userToEdit.bio,
             is_available_now: userToEdit.is_available_now,
-            average_rating: userToEdit.average_rating, // Include for display
-            total_reviews: userToEdit.total_reviews,   // Include for display
+            average_rating: userToEdit.average_rating,
+            total_reviews: userToEdit.total_reviews,
         });
     };
 
@@ -87,7 +92,7 @@ export const SuperAdminUserManagementPage: React.FC<{ navigate: (page: string, d
 
     const handleSaveUser = async () => {
         if (!showEditUserModal?.id || !db || !appId || !user?.uid) {
-            setError("Missing user ID or Firebase not initialized.");
+            setMessage({ text: "Missing user ID or Firebase not initialized.", type: "error" }); // Use setMessage
             return;
         }
         setLoading(true);
@@ -99,11 +104,12 @@ export const SuperAdminUserManagementPage: React.FC<{ navigate: (page: string, d
                 updated_at: serverTimestamp(),
             });
             setShowEditUserModal(null);
-            alert('User profile updated successfully!');
-            fetchUsers(); // Refresh the list
+            setMessage({ text: 'User profile updated successfully!', type: 'success' }); // Use setMessage
+            fetchUsers();
         } catch (err: any) {
             console.error("Error saving user:", err);
             setError(err.message);
+            setMessage({ text: `Error saving user: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -111,21 +117,26 @@ export const SuperAdminUserManagementPage: React.FC<{ navigate: (page: string, d
 
     const handleDeleteUser = async () => {
         if (!showDeleteUserModal?.id || !db || !appId || !user?.uid) {
-            setError("Missing user ID or Firebase not initialized.");
+            setMessage({ text: "Missing user ID or Firebase not initialized.", type: "error" }); // Use setMessage
             return;
         }
         setLoading(true);
         setError(null);
         try {
+            // In a real app, deleting a user would involve:
+            // 1. Deleting from Firebase Auth (backend API call)
+            // 2. Recursively deleting all subcollections (addresses, appointments, payments, feedback, prescriptions, health_records, consultations)
+            // For this PoC, we'll just delete the profile document.
             const userDocRef = doc(db, `artifacts/${appId}/users/${showDeleteUserModal.id}/users`, showDeleteUserModal.id);
-            await deleteDoc(userDocRef); // Delete the profile document
+            await deleteDoc(userDocRef);
 
             setShowDeleteUserModal(null);
-            alert('User deleted successfully!');
+            setMessage({ text: 'User deleted successfully!', type: 'success' }); // Use setMessage
             fetchUsers();
         } catch (err: any) {
             console.error("Error deleting user:", err);
             setError(err.message);
+            setMessage({ text: `Error deleting user: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -176,7 +187,7 @@ export const SuperAdminUserManagementPage: React.FC<{ navigate: (page: string, d
                                     <th>Email</th>
                                     <th>Role</th>
                                     <th>Status</th>
-                                    <th>Rating</th> {/* Added Rating Column */}
+                                    <th>Rating</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -191,10 +202,10 @@ export const SuperAdminUserManagementPage: React.FC<{ navigate: (page: string, d
                                             {u.role === 'doctor' ? (
                                                 <span>{u.average_rating?.toFixed(1) || 'N/A'} ({u.total_reviews || 0} reviews)</span>
                                             ) : 'N/A'}
-                                        </td> {/* Display Rating */}
+                                        </td>
                                         <td>
                                             <button className="btn btn-sm btn-outline-primary me-2" onClick={() => handleEditClick(u)}>Edit</button>
-                                            {u.id !== user.uid && ( // Superadmin cannot delete themselves
+                                            {u.id !== user.uid && (
                                                 <button className="btn btn-sm btn-outline-danger" onClick={() => setShowDeleteUserModal(u)}>Delete</button>
                                             )}
                                         </td>
@@ -296,8 +307,8 @@ export const SuperAdminUserManagementPage: React.FC<{ navigate: (page: string, d
 };
 
 // Superadmin Financial Oversight Page
-export const FinancialOversightPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, message, db, appId } = useAuth();
+export const FinancialOversightPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => { // MODIFIED: navigate type
+    const { user, message, db, appId, setMessage } = useAuth(); // Added setMessage
     const [totalRevenue, setTotalRevenue] = useState<number>(0);
     const [platformFees, setPlatformFees] = useState<number>(0);
     const [adminFees, setAdminFees] = useState<number>(0);
@@ -321,12 +332,17 @@ export const FinancialOversightPage: React.FC<{ navigate: (page: string, data?: 
             let doctor = 0;
             const transactions: Payment[] = [];
 
-            // Query all 'payments' subcollections
-            const paymentsSnapshot = await getDocs(query(collectionGroup(db, 'payments'), where('status', '==', 'successful'))); // Corrected: Use getDocs()
+            // Query all 'payments' using collectionGroup
+            const paymentsQuery = query(
+                collectionGroup(db, 'payments'),
+                where('status', '==', 'successful')
+            );
+            const paymentsSnapshot = await getDocs(paymentsQuery);
 
             for (const docSnap of paymentsSnapshot.docs) {
                 const pathSegments = docSnap.ref.path.split('/');
-                if (pathSegments[1] === appId) { // Ensure it belongs to this app's structure
+                // Ensure the payment belongs to the current app instance
+                if (pathSegments[1] === appId) {
                     const paymentData = docSnap.data() as Payment;
                     revenue += paymentData.amount || 0;
                     platform += paymentData.platform_fee_amount || 0;
@@ -345,13 +361,14 @@ export const FinancialOversightPage: React.FC<{ navigate: (page: string, data?: 
         } catch (err: any) {
             console.error("Error fetching financial data:", err);
             setError(err.message);
+            setMessage({ text: `Error fetching financial data: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        if (user && db && appId) { // Ensure db and appId are available
+        if (user && db && appId) {
             fetchFinancialData();
         }
     }, [user, db, appId]);
@@ -441,9 +458,9 @@ export const FinancialOversightPage: React.FC<{ navigate: (page: string, data?: 
 };
 
 // Superadmin Fee Configuration Page
-export const FeeConfigurationPage: React.FC<{ navigate: (page: string, data?: any) => void }> = ({ navigate }) => {
-    const { user, message, db, appId } = useAuth();
-    const [feeConfig, setFeeConfig] = useState<FeeConfiguration | null>(null); // Ideally, a dedicated interface for FeeConfig
+export const FeeConfigurationPage: React.FC<{ navigate: (page: string | number, data?: any) => void }> = ({ navigate }) => {
+    const { user, message, db, appId, setMessage } = useAuth(); // Added setMessage
+    const [feeConfig, setFeeConfig] = useState<FeeConfiguration | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [formData, setFormData] = useState({
@@ -452,7 +469,7 @@ export const FeeConfigurationPage: React.FC<{ navigate: (page: string, data?: an
         admin_fee_percentage: 0,
     });
 
-    const feeConfigDocId = 'current_config'; // A fixed ID for the single fee configuration document
+    const feeConfigDocId = 'current_config';
 
     const fetchFeeConfig = async () => {
         setLoading(true);
@@ -474,7 +491,6 @@ export const FeeConfigurationPage: React.FC<{ navigate: (page: string, data?: an
                     admin_fee_percentage: data.admin_fee_percentage * 100,
                 });
             } else {
-                // Set default if no config exists
                 setFeeConfig(null);
                 setFormData({
                     platform_fee_percentage: 15,
@@ -485,13 +501,14 @@ export const FeeConfigurationPage: React.FC<{ navigate: (page: string, data?: an
         } catch (err: any) {
             console.error("Error fetching fee configuration:", err);
             setError(err.message);
+            setMessage({ text: `Error fetching fee configuration: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        if (user && db && appId) { // Ensure db and appId are available
+        if (user && db && appId) {
             fetchFeeConfig();
         }
     }, [user, db, appId]);
@@ -506,15 +523,15 @@ export const FeeConfigurationPage: React.FC<{ navigate: (page: string, data?: an
 
     const handleSaveFeeConfig = async () => {
         if (!db || !appId || !user?.uid) {
-            setError("Firestore not initialized or user not logged in.");
+            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" }); // Use setMessage
             return;
         }
         setLoading(true);
         setError(null);
 
         const totalPercentage = formData.platform_fee_percentage + formData.doctor_share_percentage + formData.admin_fee_percentage;
-        if (Math.abs(totalPercentage - 100) > 0.01) { // Allow for minor floating point inaccuracies
-            setError("Total percentages must add up to 100%.");
+        if (Math.abs(totalPercentage - 100) > 0.01) {
+            setMessage({ text: "Total percentages must add up to 100%.", type: "error" }); // Use setMessage
             setLoading(false);
             return;
         }
@@ -528,14 +545,15 @@ export const FeeConfigurationPage: React.FC<{ navigate: (page: string, data?: an
                 admin_fee_percentage: formData.admin_fee_percentage / 100,
                 effective_from: serverTimestamp(),
                 created_by: user.uid,
-                created_at: feeConfig?.created_at || serverTimestamp(), // Keep original creation time if updating
+                created_at: feeConfig?.created_at || serverTimestamp(),
                 updated_at: serverTimestamp(),
             }, { merge: true });
-            alert('Fee configuration saved successfully!');
-            fetchFeeConfig(); // Re-fetch to update state
+            setMessage({ text: 'Fee configuration saved successfully!', type: 'success' }); // Use setMessage
+            fetchFeeConfig();
         } catch (err: any) {
             console.error("Error saving fee configuration:", err);
             setError(err.message);
+            setMessage({ text: `Error saving fee configuration: ${err.message}`, type: "error" }); // Use setMessage
         } finally {
             setLoading(false);
         }
@@ -624,18 +642,112 @@ export const FeeConfigurationPage: React.FC<{ navigate: (page: string, data?: an
 
 // SuperAdminDashboard Component
 export const SuperAdminDashboard: React.FC<DashboardProps> = ({ navigate, currentPage, pageData }) => {
-    const { user, logout } = useAuth();
-    // const [currentPage, setCurrentPage] = useState('dashboard'); // Removed local state, use props
-    // const [pageData, setPageData] = useState<any>(null); // Removed local state, use props
+    const { user, logout, message, db, appId } = useAuth(); // Added db, appId from useAuth
 
-    // const navigate = (page: string, data: any = null) => { // Removed local navigate, use props
-    //     setCurrentPage(page);
-    //     setPageData(data);
-    // };
+    // State for dashboard stats (similar to AdminDashboard)
+    const [totalUsersCount, setTotalUsersCount] = useState<number>(0);
+    const [totalRevenue, setTotalRevenue] = useState<number>(0);
+    const [activeDoctorsCount, setActiveDoctorsCount] = useState<number>(0);
+    const [pendingDoctorApprovalsCount, setPendingDoctorApprovalsCount] = useState<number>(0);
+    const [loadingStats, setLoadingStats] = useState(true);
+    const [errorStats, setErrorStats] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchDashboardStats = async () => {
+            setLoadingStats(true);
+            setErrorStats(null);
+            if (!db || !appId || !user?.uid) {
+                setErrorStats("Firestore not initialized or user not logged in.");
+                setLoadingStats(false);
+                return;
+            }
+            try {
+                // Fetch Total Users
+                const totalUsersQuery = query(collectionGroup(db, 'users'));
+                const totalUsersSnapshot = await getDocs(totalUsersQuery);
+                let countTotalUsers = 0;
+                totalUsersSnapshot.docs.forEach(docSnap => {
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) {
+                        countTotalUsers++;
+                    }
+                });
+                setTotalUsersCount(countTotalUsers);
+
+                // Fetch Total Revenue (from payments collectionGroup)
+                let revenue = 0;
+                const paymentsQuery = query(
+                    collectionGroup(db, 'payments'),
+                    where('status', '==', 'successful')
+                );
+                const paymentsSnapshot = await getDocs(paymentsQuery);
+                paymentsSnapshot.docs.forEach(docSnap => {
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) { // Ensure it belongs to this app's structure
+                        const paymentData = docSnap.data() as Payment;
+                        revenue += paymentData.amount || 0;
+                    }
+                });
+                setTotalRevenue(revenue);
+
+                // Fetch Active Doctors
+                const activeDoctorsQuery = query(
+                    collectionGroup(db, 'users'),
+                    where('role', '==', 'doctor'),
+                    where('status', '==', 'active')
+                );
+                const activeDoctorsSnapshot = await getDocs(activeDoctorsQuery);
+                let countActiveDoctors = 0;
+                activeDoctorsSnapshot.docs.forEach(docSnap => {
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) {
+                        countActiveDoctors++;
+                    }
+                });
+                setActiveDoctorsCount(countActiveDoctors);
+
+                // Fetch Pending Doctor Approvals
+                const pendingDoctorsQuery = query(
+                    collectionGroup(db, 'users'),
+                    where('role', '==', 'doctor'),
+                    where('status', '==', 'pending_approval')
+                );
+                const pendingDoctorsSnapshot = await getDocs(pendingDoctorsQuery);
+                let countPendingDoctors = 0;
+                pendingDoctorsSnapshot.docs.forEach(docSnap => {
+                    const pathSegments = docSnap.ref.path.split('/');
+                    if (pathSegments[1] === appId) {
+                        countPendingDoctors++;
+                    }
+                });
+                setPendingDoctorApprovalsCount(countPendingDoctors);
+
+            } catch (err: any) {
+                console.error("Error fetching superadmin dashboard stats:", err);
+                setErrorStats(err.message);
+            } finally {
+                setLoadingStats(false);
+            }
+        };
+
+        if (user && db && appId && currentPage === 'dashboard') {
+            fetchDashboardStats();
+        }
+    }, [user, db, appId, currentPage]);
+
 
     const renderSuperAdminPage = () => {
         switch (currentPage) {
             case 'dashboard':
+                if (loadingStats) return (
+                    <div className="d-flex justify-content-center align-items-center min-vh-100">
+                        <div className="text-center p-5">
+                            <LoadingSpinner /><p className="mt-3 text-muted">Loading dashboard stats...</p>
+                        </div>
+                    </div>
+                );
+                if (errorStats) return <MessageDisplay message={{ text: errorStats, type: "error" }} />;
+
                 return (
                     <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
                         <div className="d-flex justify-content-between align-items-center mb-4">
@@ -666,6 +778,8 @@ export const SuperAdminDashboard: React.FC<DashboardProps> = ({ navigate, curren
                                             <button className="btn btn-outline-secondary" onClick={() => navigate('appointmentOversight')}>Appointment Oversight</button>
                                             <button className="btn btn-outline-success" onClick={() => navigate('financialOversight')}>Financial Oversight</button>
                                             <button className="btn btn-outline-warning" onClick={() => navigate('feeConfiguration')}>Fee Configuration</button>
+                                            {/* NEW: Patient Health Oversight for Superadmin */}
+                                            <button className="btn btn-outline-dark" onClick={() => navigate('adminPatientOversight')}>Patient Health Oversight</button>
                                             {/* <button className="btn btn-outline-dark" onClick={() => navigate('zoneManagement')}>Zone Management</button> */}
                                             {/* <button className="btn btn-outline-dark" onClick={() => navigate('systemSettings')}>System Settings</button> */}
                                         </div>
@@ -677,10 +791,10 @@ export const SuperAdminDashboard: React.FC<DashboardProps> = ({ navigate, curren
                                     <div className="card-body">
                                         <h5 className="card-title text-primary">Platform Overview</h5>
                                         <ul className="list-group list-group-flush">
-                                            <li className="list-group-item">Total Users: <strong>{/* Fetch from Firestore */}</strong></li>
-                                            <li className="list-group-item">Total Revenue (Last 30 days): <strong>₹{/* Fetch from Firestore */}</strong></li>
-                                            <li className="list-group-item">Active Doctors: <strong>{/* Fetch from Firestore */}</strong></li>
-                                            <li className="list-group-item">Pending Doctor Approvals: <strong>{/* Fetch from Firestore */}</strong></li>
+                                            <li className="list-group-item">Total Users: <strong>{totalUsersCount}</strong></li>
+                                            <li className="list-group-item">Total Revenue (All Time): <strong>₹{totalRevenue.toFixed(2)}</strong></li>
+                                            <li className="list-group-item">Active Doctors: <strong>{activeDoctorsCount}</strong></li>
+                                            <li className="list-group-item">Pending Doctor Approvals: <strong>{pendingDoctorApprovalsCount}</strong></li>
                                         </ul>
                                     </div>
                                 </div>
@@ -691,18 +805,24 @@ export const SuperAdminDashboard: React.FC<DashboardProps> = ({ navigate, curren
             case 'userManagement':
                 return <SuperAdminUserManagementPage navigate={navigate} />;
             case 'serviceManagement':
-                // Re-using Admin's ServiceManagement, as it's generic enough
+                // Re-using Admin's ServiceManagement, as it's generic enough and already updated
                 return <ServiceManagementPage navigate={navigate} />;
             case 'offerManagement':
-                // Re-using Admin's OfferManagement
+                // Re-using Admin's OfferManagement and already updated
                 return <OfferManagementPage navigate={navigate} />;
             case 'appointmentOversight':
-                // Re-using Admin's AppointmentOversight
+                // Re-using Admin's AppointmentOversight and already updated
                 return <AppointmentOversightPage navigate={navigate} />;
             case 'financialOversight':
                 return <FinancialOversightPage navigate={navigate} />;
             case 'feeConfiguration':
                 return <FeeConfigurationPage navigate={navigate} />;
+            case 'adminPatientOversight': // Reusing Admin's patient oversight
+                return <AdminPatientOversightPage navigate={navigate} />;
+            case 'adminPatientHealthDataView': // Reusing Admin's patient health data view
+                return <AdminPatientHealthDataViewPage navigate={navigate} patientId={pageData.patientId} patientName={pageData.patientName} />;
+            case 'prescriptionViewer': // NEW CASE for Prescription Viewer
+                return <PrescriptionViewerPage navigate={navigate} patientId={pageData.patientId} prescriptionId={pageData.prescriptionId} />;
             // case 'zoneManagement':
             //     return <ZoneManagementPage navigate={navigate} />; // To be implemented
             // case 'systemSettings':
