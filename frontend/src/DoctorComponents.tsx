@@ -10,7 +10,10 @@ import { DashboardProps } from './PatientComponents'; // Import DashboardProps f
 import { PrescriptionViewerPage } from './PrescriptionViewerPage';
 
 // Import the TeleconsultationCallPage (if doctors also navigate to it directly, though usually they'll open in new tab)
-import { TeleconsultationCallPage } from './TeleconsultationCallPage'; // NEW IMPORT
+import { TeleconsultationCallPage } from './TeleconsultationCallPage';
+
+// NEW IMPORT: MapView component
+import { MapView } from './MapView';
 
 // Extend the Feedback type for local use in this component
 interface EnrichedFeedback extends Feedback {
@@ -301,8 +304,9 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, da
                 let patientName = patientsMap.get(apptData.patient_id)?.full_name || patientsMap.get(apptData.patient_id)?.email || 'Unknown Patient';
                 let addressDetails: Address | undefined;
                 let teleconsultationLink: string | undefined; // NEW: To store Jitsi link
+
                 // Fetch address details (from patient's address collection) for in-person
-                if ((apptData.appointment_type === 'in_person' || !apptData.appointment_type) && apptData.address_id) {
+                if (apptData.appointment_type === 'in_person' && apptData.address_id) {
                     const patientAddressesCollectionRef = collection(db, `artifacts/${appId}/users/${apptData.patient_id}/addresses`);
                     const addressDocRef = doc(patientAddressesCollectionRef, apptData.address_id);
                     const addressSnap = await getDoc(addressDocRef);
@@ -311,12 +315,13 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, da
                     }
                 } else if (apptData.appointment_type === 'teleconsultation' && apptData.teleconsultation_id) {
                     // NEW: Fetch teleconsultation link from subcollection
-                    const teleconsultationDocRef = doc(db, `artifacts/${appId}/users/${apptData.patient_id}/appointments/${docSnap.id}/teleconsultations/${apptData.teleconsultation_id}`);
+                    const teleconsultationDocRef = doc(db, `artifacts/${appId}/users/${apptData.patient_id}/appointments/${docSnap.id}/teleconsultations`, apptData.teleconsultation_id);
                     const teleconsultationSnap = await getDoc(teleconsultationDocRef);
                     if (teleconsultationSnap.exists()) {
                         teleconsultationLink = (teleconsultationSnap.data() as Teleconsultation).meeting_link;
                     }
                 }
+
                 fetchedAppointments.push({
                     ...apptData,
                     id: docSnap.id,
@@ -411,7 +416,7 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, da
                                     <tr key={appt.id}>
                                         <td>{appt.serviceName}</td>
                                         <td>{appt.patientName}</td>
-                                        <td>{appt.appointment_type === 'in_person' ? 'In-person' : 'Teleconsultation'}</td> {/* Display type */}
+                                        <td>{appt.appointment_type === 'teleconsultation' ? 'Teleconsultation' : 'In-Person'}</td> {/* Display type */}
                                         <td>{appt.requested_date}</td>
                                         <td>{appt.requested_time_slot}</td>
                                         <td><span className={`badge ${getStatusBadgeClass(appt.status)}`}>{appt.status.replace(/_/g, ' ').toUpperCase()}</span></td>
@@ -619,7 +624,7 @@ export const PendingAppointmentsPage: React.FC<{ navigate: (page: string | numbe
                                     <tr key={appt.id}>
                                         <td>{appt.serviceName}</td>
                                         <td>{appt.patientName}</td>
-                                        <td>{appt.appointment_type === 'in_person' ? 'In-person' : 'Teleconsultation'}</td> {/* Display type */}
+                                        <td>{appt.appointment_type === 'teleconsultation' ? 'Teleconsultation' : 'In-Person'}</td> {/* Display type */}
                                         <td>{appt.requested_date}</td>
                                         <td>{appt.requested_time_slot}</td>
                                         <td>{appt.addressDetails ? `${appt.addressDetails.address_line_1}, ${appt.addressDetails.city}` : 'N/A (Teleconsultation)'}</td> {/* Adjusted for teleconsultation */}
@@ -1233,6 +1238,9 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [showCompleteModal, setShowCompleteModal] = useState(false);
     // Removed local teleconsultationLink state, it's now part of the `appointment` state
+    // NEW STATE: For controlling the visibility of the MapView modal
+    const [showMapModal, setShowMapModal] = useState<boolean>(false);
+
 
     useEffect(() => {
         const fetchAppointmentDetails = async () => {
@@ -1274,7 +1282,7 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                     const patientProfileSnap = await getDoc(patientUserDocRef);
                     patientName = patientProfileSnap.exists() ? (patientProfileSnap.data() as UserProfile).full_name || (patientProfileSnap.data() as UserProfile).email : patientName;
 
-                    if (apptData.appointment_type === 'in_person' && apptData.address_id) {
+                    if ((apptData.appointment_type === 'in_person' || !apptData.appointment_type) && apptData.address_id) {
                         const patientAddressesCollectionRef = collection(db, `artifacts/${appId}/users/${apptData.patient_id}/addresses`);
                         const addressDocRef = doc(patientAddressesCollectionRef, apptData.address_id);
                         const addressSnap = await getDoc(addressDocRef);
@@ -1357,7 +1365,7 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                 const updatedApptData = updatedAppointmentSnapshot.data() as Appointment;
                 let fetchedTeleconsultationLink: string | undefined;
                 if (updatedApptData.appointment_type === 'teleconsultation' && updatedApptData.teleconsultation_id) {
-                    const teleconsultationDocRef = doc(db, `artifacts/${appId}/users/${updatedApptData.patient_id}/appointments/${updatedApptData.id}/teleconsultations`, updatedApptData.teleconsultation_id);
+                    const teleconsultationDocRef = doc(db, `artifacts/${appId}/users/${updatedApptData.patient_id}/appointments/${updatedAppointmentSnapshot.id}/teleconsultations`, updatedApptData.teleconsultation_id);
                     const teleconsultationSnap = await getDoc(teleconsultationDocRef);
                     if (teleconsultationSnap.exists()) {
                         fetchedTeleconsultationLink = (teleconsultationSnap.data() as Teleconsultation).meeting_link;
@@ -1426,11 +1434,20 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                     <strong>Patient:</strong> {appointment.patientName}
                 </div>
                 <div className="mb-3">
-                    <strong>Appointment Type:</strong> {appointment.appointment_type === 'in_person' ? 'In-person' : 'Teleconsultation'}
+                    <strong>Appointment Type:</strong> {appointment.appointment_type === 'teleconsultation' ? 'Teleconsultation' : 'In-Person'}
                 </div>
-                {appointment.appointment_type === 'in_person' && (
+                {(appointment.appointment_type === 'in_person'  || !appointment.appointment_type)&& (
                     <div className="mb-3">
                         <strong>Address:</strong> {appointment.addressDetails ? `${appointment.addressDetails.address_line_1}, ${appointment.addressDetails.city}, ${appointment.addressDetails.state} - ${appointment.addressDetails.zip_code}` : 'N/A'}
+                        {appointment.addressDetails?.latitude !== undefined && appointment.addressDetails?.latitude !== null &&
+                         appointment.addressDetails?.longitude !== undefined && appointment.addressDetails?.longitude !== null && (
+                            <button
+                                className="btn btn-sm btn-outline-info ms-3"
+                                onClick={() => setShowMapModal(true)} // Open map modal
+                            >
+                                View on Map
+                            </button>
+                        )}
                     </div>
                 )}
                 <div className="mb-3">
@@ -1535,6 +1552,25 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                     cancelText="No"
                 />
             )}
+
+            {/* NEW: Map View Modal */}
+            {showMapModal && appointment?.addressDetails?.latitude !== undefined && appointment?.addressDetails?.latitude !== null &&
+             appointment?.addressDetails?.longitude !== undefined && appointment?.addressDetails?.longitude !== null && (
+                <CustomModal
+                    title={`Location for ${appointment.patientName}'s Appointment`}
+                    message={
+                        <MapView
+                            lat={appointment.addressDetails.latitude}
+                            lng={appointment.addressDetails.longitude}
+                            label={appointment.addressDetails.address_line_1}
+                        />
+                    }
+                    onConfirm={() => setShowMapModal(false)} // Just close the modal
+                    onCancel={() => setShowMapModal(false)}
+                    confirmText="Close Map"
+                />
+            )}
+            {/* END NEW: Map View Modal */}
 
             <div className="d-flex justify-content-center mt-4">
                 <button className="btn btn-link" onClick={() => navigate('myAppointments')}>Back to My Appointments</button>

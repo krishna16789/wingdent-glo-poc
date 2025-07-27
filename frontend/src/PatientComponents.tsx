@@ -13,6 +13,9 @@ import { PrescriptionViewerPage } from './PrescriptionViewerPage';
 // NEW IMPORT: TeleconsultationCallPage (assuming this is now a separate file)
 import { TeleconsultationCallPage } from './TeleconsultationCallPage';
 
+// NEW IMPORT: LocationPicker component
+import { LocationPicker } from './LocationPicker';
+
 // Define a common interface for dashboard props
 export interface DashboardProps {
     navigate: (page: string | number, data?: any) => void;
@@ -67,8 +70,8 @@ export const PatientDashboard: React.FC<DashboardProps> = ({ navigate, currentPa
 
                 // Sort in memory by date and then time slot
                 upcomingAppts.sort((a, b) => {
-                    const dateA = new Date(`${a.requested_date} ${a.requested_time_slot.split(' ')[0]}`); // Assuming time slot starts with HH:MM
-                    const dateB = new Date(`${b.requested_date} ${b.requested_time_slot.split(' ')[0]}`);
+                    const dateA = new Date(`${a.requested_date} ${a.requested_time_slot.split(' - ')[0]}`); // Use full time slot for parsing
+                    const dateB = new Date(`${b.requested_date} ${b.requested_time_slot.split(' - ')[0]}`);
                     return dateA.getTime() - dateB.getTime();
                 });
 
@@ -291,8 +294,11 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string | number, data?
     const [error, setError] = useState<string | null>(null);
     const [showAddressModal, setShowAddressModal] = useState<boolean>(false);
     const [currentAddress, setCurrentAddress] = useState<Address | null>(null);
-    const [addressFormData, setAddressFormData] = useState<Partial<Address>>({});
+    // MODIFIED: Include latitude and longitude in addressFormData type
+    const [addressFormData, setAddressFormData] = useState<Partial<Address & { latitude?: number | null; longitude?: number | null }>>({});
     const [showDeleteAddressModal, setShowDeleteAddressModal] = useState<Address | null>(null);
+    // NEW STATE: For controlling the visibility of the LocationPicker modal
+    const [showLocationPickerModal, setShowLocationPickerModal] = useState<boolean>(false);
 
     const fetchAddresses = async () => {
         setLoading(true);
@@ -305,7 +311,8 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string | number, data?
         try {
             const addressesCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/addresses`);
             const snapshot = await getDocs(addressesCollectionRef);
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Address[];
+            // Ensure latitude and longitude are correctly typed when fetching
+            const data = snapshot.docs.map(doc => ({ ...doc.data() as Address, id: doc.id })) as Address[];
             setAddresses(data);
         } catch (err: any) {
             console.error("Error fetching addresses:", err);
@@ -331,13 +338,20 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string | number, data?
             zip_code: '',
             label: '',
             is_default: false,
+            latitude: null, // Initialize latitude
+            longitude: null, // Initialize longitude
         });
         setShowAddressModal(true);
     };
 
     const handleEditAddressClick = (address: Address) => {
         setCurrentAddress(address);
-        setAddressFormData(address);
+        // Ensure latitude and longitude are picked up from existing address
+        setAddressFormData({
+            ...address,
+            latitude: address.latitude !== undefined ? address.latitude : null,
+            longitude: address.longitude !== undefined ? address.longitude : null,
+        });
         setShowAddressModal(true);
     };
 
@@ -348,6 +362,17 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string | number, data?
             ...prev,
             [name]: newValue
         }));
+    };
+
+    // NEW FUNCTION: Handle location selected from the map picker
+    const handleLocationSelected = (location: { lat: number; lng: number }) => {
+        setAddressFormData(prev => ({
+            ...prev,
+            latitude: location.lat,
+            longitude: location.lng,
+        }));
+        setShowLocationPickerModal(false); // Close the modal
+        setMessage({ text: "Location selected from map!", type: "success" });
     };
 
     const handleSaveAddress = async () => {
@@ -374,20 +399,24 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string | number, data?
                 }
             }
 
+            // Common data for both add and edit, including latitude and longitude
+            const commonAddressData = {
+                ...addressFormData,
+                latitude: addressFormData.latitude !== undefined ? addressFormData.latitude : null, // Ensure null if not explicitly set
+                longitude: addressFormData.longitude !== undefined ? addressFormData.longitude : null, // Ensure null if not explicitly set
+                updated_at: serverTimestamp(),
+            };
+
             if (currentAddress) {
                 const addressDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/addresses`, currentAddress.id);
-                batch.update(addressDocRef, {
-                    ...addressFormData,
-                    updated_at: serverTimestamp(),
-                });
+                batch.update(addressDocRef, commonAddressData);
                 setMessage({ text: 'Address updated successfully!', type: 'success' });
             } else {
                 const addressesCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/addresses`);
                 batch.set(doc(addressesCollectionRef), {
-                    ...addressFormData,
+                    ...commonAddressData,
                     user_id: user.uid,
                     created_at: serverTimestamp(),
-                    updated_at: serverTimestamp(),
                 });
                 setMessage({ text: 'Address added successfully!', type: 'success' });
             }
@@ -459,6 +488,11 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string | number, data?
                                         <p className="card-text mb-0">{addr.address_line_1}</p>
                                         {addr.address_line_2 && <p className="card-text mb-0">{addr.address_line_2}</p>}
                                         <p className="card-text mb-0">{addr.city}, {addr.state} {addr.zip_code}</p>
+                                        {addr.latitude !== undefined && addr.latitude !== null && addr.longitude !== undefined && addr.longitude !== null && (
+                                            <p className="card-text mb-0 text-muted small">
+                                                Lat: {addr.latitude.toFixed(4)}, Lng: {addr.longitude.toFixed(4)}
+                                            </p>
+                                        )}
                                         <div className="mt-3">
                                             <button className="btn btn-sm btn-outline-primary me-2" onClick={() => handleEditAddressClick(addr)}>Edit</button>
                                             <button className="btn btn-sm btn-outline-danger" onClick={() => setShowDeleteAddressModal(addr)}>Delete</button>
@@ -504,6 +538,26 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string | number, data?
                                 <input type="checkbox" className="form-check-input" id="isDefault" name="is_default" checked={addressFormData.is_default || false} onChange={handleAddressFormChange} />
                                 <label className="form-check-label" htmlFor="isDefault">Set as Default Address</label>
                             </div>
+
+                            {/* NEW: Map Location Section */}
+                            <div className="mb-3 border p-3 rounded bg-light">
+                                <h6 className="fw-bold">Map Location (Optional)</h6>
+                                <p className="text-muted small">Set precise coordinates for this address.</p>
+                                <div className="mb-2">
+                                    <strong>Latitude:</strong> {addressFormData.latitude !== null && addressFormData.latitude !== undefined ? addressFormData.latitude.toFixed(6) : 'N/A'}
+                                </div>
+                                <div className="mb-3">
+                                    <strong>Longitude:</strong> {addressFormData.longitude !== null && addressFormData.longitude !== undefined ? addressFormData.longitude.toFixed(6) : 'N/A'}
+                                </div>
+                                <button
+                                    type="button"
+                                    className="btn btn-outline-info w-100"
+                                    onClick={() => setShowLocationPickerModal(true)}
+                                >
+                                    Pick on Map
+                                </button>
+                            </div>
+                            {/* END NEW: Map Location Section */}
                         </form>
                     }
                     onConfirm={handleSaveAddress}
@@ -523,6 +577,22 @@ export const MyAddressesPage: React.FC<{ navigate: (page: string | number, data?
                     cancelText="No, Keep"
                 />
             )}
+
+            {/* NEW: Location Picker Modal */}
+            {showLocationPickerModal && (
+                <CustomModal
+                    title="Select Location"
+                    message={<LocationPicker
+                        onLocationSelect={handleLocationSelected}
+                        initialLat={addressFormData.latitude} // Pass existing lat if editing
+                        initialLng={addressFormData.longitude} // Pass existing lng if editing
+                        onCancel={() => setShowLocationPickerModal(false)}
+                    />}
+                    onConfirm={() => { /* Handled by LocationPicker's internal button */ }}
+                    onCancel={() => setShowLocationPickerModal(false)}
+                />
+            )}
+            {/* END NEW: Location Picker Modal */}
 
             <div className="d-flex justify-content-center mt-4">
                 <button className="btn btn-link" onClick={() => navigate('dashboard')}>Back to Dashboard</button>
@@ -774,8 +844,7 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
                                     <div className="carousel-inner rounded-3 shadow-sm">
                                         {offers.map((offer, index) => (
                                             <div className={`carousel-item ${index === 0 ? 'active' : ''}`} key={offer.id}>
-                                                <img src={offer.image_url || "https://placehold.co/600x200/cccccc/000000?text=Offer"} className="d-block w-100" alt={offer.title}
-                                                     onError={(e: any) => { e.target.onerror = null; e.target.src="https://placehold.co/600x200/cccccc/000000?text=Offer"; }} />
+                                                <img src={offer.image_url || "https://placehold.co/600x200/cccccc/000000?text=Offer"} className="d-block w-100" alt={offer.title} onError={(e: any) => { e.target.onerror = null; e.target.src="https://placehold.co/600x200/cccccc/000000?text=Offer"; }} />
                                                 <div className="carousel-caption d-none d-md-block bg-dark bg-opacity-75 rounded p-2">
                                                     <h5>{offer.title}</h5>
                                                     <p>{offer.description}</p>
@@ -870,6 +939,7 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
 
                         <div className="d-flex justify-content-between mt-4">
                             <button className="btn btn-secondary" onClick={() => setStep(1)}>Back</button>
+                            <button className="btn btn-primary" onClick={() => setStep(3)}>Next</button>
                             {/* No "Next" button here, selection automatically moves to step 3 */}
                         </div>
                     </>
@@ -897,6 +967,11 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
                                                     <p className="card-text mb-0">{addr.address_line_1}</p>
                                                     {addr.address_line_2 && <p className="card-text mb-0">{addr.address_line_2}</p>}
                                                     <p className="card-text mb-0">{addr.city}, {addr.state} {addr.zip_code}</p>
+                                                    {addr.latitude !== undefined && addr.latitude !== null && addr.longitude !== undefined && addr.longitude !== null && (
+                                                        <p className="card-text mb-0 text-muted small">
+                                                            Lat: {addr.latitude.toFixed(4)}, Lng: {addr.longitude.toFixed(4)}
+                                                        </p>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -905,7 +980,7 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
                             )
                         )}
 
-                        {bookingData.appointment_type === 'teleconsultation' && (
+                        {(bookingData.appointment_type === 'teleconsultation' || bookingData.appointment_type === 'in_person') && (
                             <>
                                 <div className="mb-3">
                                     <label htmlFor="requestedDate" className="form-label">Preferred Date:</label>
@@ -964,6 +1039,9 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
                                         <br />{bookingData.addressDetails.address_line_1}
                                         {bookingData.addressDetails.address_line_2 && <>, {bookingData.addressDetails.address_line_2}</>}
                                         <br />{bookingData.addressDetails.city}, {bookingData.addressDetails.state} {bookingData.addressDetails.zip_code}
+                                        {bookingData.addressDetails.latitude !== undefined && bookingData.addressDetails.latitude !== null && bookingData.addressDetails.longitude !== undefined && bookingData.addressDetails.longitude !== null && (
+                                            <><br /><small className="text-muted">Lat: {bookingData.addressDetails.latitude.toFixed(4)}, Lng: {bookingData.addressDetails.longitude.toFixed(4)}</small></>
+                                        )}
                                     </>
                                 </li>
                             )}
@@ -1076,6 +1154,7 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string | number, data?:
                         addressDetails = addressSnap.data() as Address;
                     }
                 } else if (apptData.appointment_type === 'teleconsultation' && apptData.teleconsultation_id) {
+                    // Corrected: Use docSnap.id for the appointment ID
                     const teleconsultationDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/appointments/${docSnap.id}/teleconsultations`, apptData.teleconsultation_id);
                     const teleconsultationSnap = await getDoc(teleconsultationDocRef);
                     if (teleconsultationSnap.exists()) {
@@ -1420,7 +1499,8 @@ export const AppointmentStatusPage: React.FC<{ navigate: (page: string | number,
                             addressDetails = addressSnap.data() as Address;
                         }
                     } else if (apptData.appointment_type === 'teleconsultation' && apptData.teleconsultation_id) {
-                        const teleconsultationDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/appointments/${apptData.id}/teleconsultations`, apptData.teleconsultation_id);
+                        // Corrected: Use docSnap.id for the appointment ID
+                        const teleconsultationDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/appointments/${docSnap.id}/teleconsultations`, apptData.teleconsultation_id);
                         const teleconsultationSnap = await getDoc(teleconsultationDocRef);
                         if (teleconsultationSnap.exists()) {
                             setTeleconsultationLink((teleconsultationSnap.data() as Teleconsultation).meeting_link);
@@ -1515,7 +1595,8 @@ export const AppointmentStatusPage: React.FC<{ navigate: (page: string | number,
 
     const isJoinCallActive = (appt: EnrichedAppointment) => { // MODIFIED: Use EnrichedAppointment
         if (appt.appointment_type === 'teleconsultation' && appt.teleconsultationLink && appt.status === 'confirmed') {
-            const apptDateTime = new Date(`${appt.requested_date} ${appt.requested_time_slot.split(' ')[0]}`);
+            const startTime = appt.requested_time_slot.split(' - ')[0]; // Get "HH:MM AM/PM"
+            const apptDateTime = new Date(`${appt.requested_date} ${startTime}`);
             const now = new Date();
             const fifteenMinutesBefore = new Date(apptDateTime.getTime() - 15 * 60 * 1000);
             const oneHourAfter = new Date(apptDateTime.getTime() + 60 * 60 * 1000);

@@ -56,6 +56,8 @@ export interface Address {
     zip_code: string;
     label: string; // e.g., "Home", "Office"
     is_default: boolean;
+    latitude?: number | null; // NEW: Optional latitude
+    longitude?: number | null; // NEW: Optional longitude
     created_at: Timestamp | FieldValue;
     updated_at: Timestamp | FieldValue;
 }
