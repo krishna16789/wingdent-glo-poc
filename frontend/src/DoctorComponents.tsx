@@ -353,13 +353,14 @@ export const MyAppointmentsPage: React.FC<{ navigate: (page: string | number, da
 
     const isStartCallActive = (appointment: EnrichedDoctorAppointment) => {
         if (appointment.appointment_type === 'teleconsultation' && appointment.teleconsultationLink && appointment.status === 'confirmed') {
-            const startTime = appointment.requested_time_slot.split(' - ')[0]; // Get "HH:MM AM/PM"
+            return true;
+            /*const startTime = appointment.requested_time_slot.split(' - ')[0]; // Get "HH:MM AM/PM"
             const apptDateTime = new Date(`${appointment.requested_date} ${startTime}`);
             const now = new Date();
             // Allow starting 15 minutes before to 1 hour after scheduled time
             const fifteenMinutesBefore = new Date(apptDateTime.getTime() - 15 * 60 * 1000);
             const oneHourAfter = new Date(apptDateTime.getTime() + 60 * 60 * 1000);
-            return now >= fifteenMinutesBefore && now <= oneHourAfter;
+            return now >= fifteenMinutesBefore && now <= oneHourAfter;*/
         }
         return false;
     };

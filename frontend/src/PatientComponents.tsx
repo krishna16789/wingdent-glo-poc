@@ -1287,12 +1287,13 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string | number, data?:
 
     const isJoinCallActive = (appt: EnrichedAppointment) => { // MODIFIED: Use EnrichedAppointment
         if (appt.appointment_type === 'teleconsultation' && appt.teleconsultationLink && appt.status === 'confirmed') {
-            const startTime = appt.requested_time_slot.split(' - ')[0]; // Get "HH:MM AM/PM"
+            return true
+            /*const startTime = appt.requested_time_slot.split(' - ')[0]; // Get "HH:MM AM/PM"
             const apptDateTime = new Date(`${appt.requested_date} ${startTime}`);
             const now = new Date();
             const fifteenMinutesBefore = new Date(apptDateTime.getTime() - 15 * 60 * 1000);
             const oneHourAfter = new Date(apptDateTime.getTime() + 60 * 60 * 1000);
-            return now >= fifteenMinutesBefore && now <= oneHourAfter;
+            return now >= fifteenMinutesBefore && now <= oneHourAfter;*/
         }
         return false;
     };
