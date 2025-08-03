@@ -1422,6 +1422,20 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
         return <MessageDisplay message={{ text: "Access Denied. You must be a Doctor to view this page.", type: "error" }} />;
     }
     if (!appointment) return <MessageDisplay message={{ text: "No appointment data provided or found.", type: "error" }} />;
+    /**
+     * Generates a Google Maps URL for a given address string.
+     * @param addressString A single string containing the full address (e.g., "123 Main St, Anytown, CA 12345").
+     * @returns A string representing the Google Maps URL.
+     */
+    const generateGoogleMapsLink = (addressString: string): string => {
+        // Encode the address string to be safe for a URL.
+        const encodedAddress = encodeURIComponent(addressString);
+
+        // Construct the full Google Maps URL with the encoded query.
+        return `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
+    };
+
+    const fullAddress = appointment.addressDetails ? `${appointment.addressDetails.address_line_1}, ${appointment.addressDetails.city}, ${appointment.addressDetails.state} - ${appointment.addressDetails.zip_code}` : undefined;
 
     return (
         <div className="container py-4">
@@ -1440,6 +1454,14 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                 {(appointment.appointment_type === 'in_person'  || !appointment.appointment_type)&& (
                     <div className="mb-3">
                         <strong>Address:</strong> {appointment.addressDetails ? `${appointment.addressDetails.address_line_1}, ${appointment.addressDetails.city}, ${appointment.addressDetails.state} - ${appointment.addressDetails.zip_code}` : 'N/A'}
+                        {fullAddress && !appointment.addressDetails?.latitude && !appointment.addressDetails?.longitude ? <a
+                            href={generateGoogleMapsLink(fullAddress)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-outline-info"
+                        >
+                            <i className="fas fa-map-marker-alt"></i> View Address on GoogleMaps
+                        </a>: null}
                         {appointment.addressDetails?.latitude !== undefined && appointment.addressDetails?.latitude !== null &&
                          appointment.addressDetails?.longitude !== undefined && appointment.addressDetails?.longitude !== null && (
                             <button
@@ -1560,11 +1582,18 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                 <CustomModal
                     title={`Location for ${appointment.patientName}'s Appointment`}
                     message={
-                        <MapView
-                            lat={appointment.addressDetails.latitude}
-                            lng={appointment.addressDetails.longitude}
-                            label={appointment.addressDetails.address_line_1}
-                        />
+                        <a
+                            href={generateGoogleMapsLink(`${appointment?.addressDetails?.latitude}, ${appointment?.addressDetails?.longitude}`)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-outline-info"
+                        >
+                            <MapView
+                                lat={appointment.addressDetails.latitude}
+                                lng={appointment.addressDetails.longitude}
+                                label={appointment.addressDetails.address_line_1}
+                            />
+                        </a>
                     }
                     onConfirm={() => setShowMapModal(false)} // Just close the modal
                     onCancel={() => setShowMapModal(false)}
