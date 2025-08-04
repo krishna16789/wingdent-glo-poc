@@ -1453,7 +1453,7 @@ export const DoctorAppointmentDetailsPage: React.FC<{ navigate: (page: string | 
                 </div>
                 {(appointment.appointment_type === 'in_person'  || !appointment.appointment_type)&& (
                     <div className="mb-3">
-                        <strong>Address:</strong> {appointment.addressDetails ? `${appointment.addressDetails.address_line_1}, ${appointment.addressDetails.city}, ${appointment.addressDetails.state} - ${appointment.addressDetails.zip_code}` : 'N/A'}
+                        <strong>Address:</strong> {appointment.addressDetails ? `${appointment.addressDetails.address_line_1}, ${appointment.addressDetails.address_line_2}, ${appointment.addressDetails.city}, ${appointment.addressDetails.state} - ${appointment.addressDetails.zip_code}` : 'N/A'}
                         {fullAddress && !appointment.addressDetails?.latitude && !appointment.addressDetails?.longitude ? <a
                             href={generateGoogleMapsLink(fullAddress)}
                             target="_blank"

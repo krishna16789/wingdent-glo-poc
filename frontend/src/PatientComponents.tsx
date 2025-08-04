@@ -615,6 +615,14 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
     const [bookingData, setBookingData] = useState<{
         service_id: string;
         address_id: string | null;
+        // NEW: Add a state for the new address form data
+        newAddressFormData?: Partial<Address & { latitude?: number | null; longitude?: number | null; }>;
+        // The below fields are needed for the new address modal
+        address_line_1?: string;
+        address_line_2?: string;
+        city?: string;
+        state?: string;
+        zip_code?: string;
         requested_date: string;
         requested_time_slot: string;
         estimated_cost: number;
@@ -630,7 +638,12 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
         estimated_cost: 0,
         appointment_type: 'in_person',
         patientPhoneNumber: '', // Initialize
+        newAddressFormData: {
+            address_line_1: '', address_line_2: '', city: '', state: '',
+            zip_code: '', label: '', is_default: false, latitude: null, longitude: null
+        },  
     });
+    const [showAddAddressModal, setShowAddAddressModal] = useState<boolean>(false);
     const [selectedService, setSelectedService] = useState<Service | null>(null);
     const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
 
@@ -749,6 +762,61 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
     const handleDateTimeChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setBookingData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleNewAddressFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        const newValue = (e.target as HTMLInputElement).type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
+        setBookingData(prev => ({
+            ...prev,
+            newAddressFormData: {
+                ...prev.newAddressFormData,
+                [name]: newValue
+            }
+        }));
+    };
+        
+    const handleSaveNewAddress = async () => {
+        const newAddress = bookingData.newAddressFormData;
+        if (!db || !appId || !user?.uid) {
+            setMessage({ text: "Firestore not initialized or user not logged in.", type: "error" });
+            return;
+        }
+        if (!newAddress?.address_line_1 || !newAddress?.city || !newAddress?.state || !newAddress?.zip_code || !newAddress?.label) {
+            setMessage({ text: "Please fill all required address fields.", type: "error" });
+            return;
+        }
+    
+        setLoading(true);
+        try {
+            const addressesCollectionRef = collection(db, `artifacts/${appId}/users/${user.uid}/addresses`);
+            const docRef = await addDoc(addressesCollectionRef, {
+                ...newAddress,
+                user_id: user.uid,
+                created_at: serverTimestamp(),
+                updated_at: serverTimestamp(),
+            });
+    
+            // Create a new Address object with the ID from the docRef
+            const newAddressWithId: Address = {
+                id: docRef.id,
+                user_id: user.uid,
+                ...newAddress,
+                created_at: Timestamp.now(),
+                updated_at: Timestamp.now(),
+            } as Address;
+    
+            // Update the addresses state and select the new address
+            setAddresses(prev => [...prev, newAddressWithId]);
+            setSelectedAddress(newAddressWithId);
+            setBookingData(prev => ({ ...prev, address_id: newAddressWithId.id, addressDetails: newAddressWithId }));
+            setShowAddAddressModal(false);
+            setMessage({ text: 'New address added successfully!', type: 'success' });
+        } catch (err: any) {
+            setMessage({ text: `Error adding new address: ${err.message}`, type: "error" });
+        } finally {
+            setLoading(false);
+        }
     };
 
     // NEW: Handle phone number input change
@@ -953,7 +1021,14 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
 
                         {bookingData.appointment_type === 'in_person' && (
                             addresses.length === 0 ? (
-                                <p className="text-muted text-center">No addresses saved. Please add one in "My Addresses" first.</p>
+                                <>
+                                    <p className="text-muted text-center">No addresses saved. Please add one to continue.</p>
+                                    <div className="d-grid gap-2">
+                                        <button className="btn btn-success" onClick={() => setShowAddAddressModal(true)}>
+                                            Add New Address
+                                        </button>
+                                    </div>
+                                </>
                             ) : (
                                 <div className="row g-3">
                                     {addresses.map(addr => (
@@ -980,6 +1055,53 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
                             )
                         )}
 
+                    {showAddAddressModal && (
+                        <CustomModal
+                            title="Add New Address"
+                            message={
+                            <form>
+                                <div className="mb-3">
+                                    <label htmlFor="newAddressLine1" className="form-label">Address Line 1:</label>
+                                    <input type="text" className="form-control" id="newAddressLine1" name="address_line_1" value={bookingData.newAddressFormData?.address_line_1 || ''} onChange={handleNewAddressFormChange} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label htmlFor="newAddressLine2" className="form-label">Address Line 2 (Optional):</label>
+                                    <input type="text" className="form-control" id="newAddressLine2" name="address_line_2" value={bookingData.newAddressFormData?.address_line_2 || ''} onChange={handleNewAddressFormChange} />
+                                </div>
+                                <div className="mb-3">
+                                    <label htmlFor="newCity" className="form-label">City:</label>
+                                    <input type="text" className="form-control" id="newCity" name="city" value={bookingData.newAddressFormData?.city || ''} onChange={handleNewAddressFormChange} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label htmlFor="newState" className="form-label">State:</label>
+                                    <input type="text" className="form-control" id="newState" name="state" value={bookingData.newAddressFormData?.state || ''} onChange={handleNewAddressFormChange} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label htmlFor="newZipCode" className="form-label">Zip Code:</label>
+                                    <input type="text" className="form-control" id="newZipCode" name="zip_code" value={bookingData.newAddressFormData?.zip_code || ''} onChange={handleNewAddressFormChange} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label htmlFor="newLabel" className="form-label">Label (e.g., Home, Office):</label>
+                                    <input type="text" className="form-control" id="newLabel" name="label" value={bookingData.newAddressFormData?.label || ''} onChange={handleNewAddressFormChange} required />
+                                </div>
+                                <div className="form-check mb-3">
+                                    <input type="checkbox" className="form-check-input" id="newIsDefault" name="is_default" checked={bookingData.newAddressFormData?.is_default || false} onChange={handleNewAddressFormChange} />
+                                    <label className="form-check-label" htmlFor="newIsDefault">Set as Default Address</label>
+                                </div>
+                            </form>
+                            }
+                            onConfirm={handleSaveNewAddress}
+                            onCancel={() => {
+                            setShowAddAddressModal(false);
+                            setBookingData(prev => ({
+                                ...prev,
+                                newAddressFormData: {} // Clear form data on cancel
+                            }));
+                            }}
+                            confirmText="Save Address"
+                        >
+                        </CustomModal>
+                    )}
                         {(bookingData.appointment_type === 'teleconsultation' || bookingData.appointment_type === 'in_person') && (
                             <>
                                 <div className="mb-3">
