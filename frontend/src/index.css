@@ -16,3 +16,16 @@ code {
 .nav-item {
   margin-right: 4px;
 }
+
+.blink {
+  animation: blinker 1.5s linear infinite;
+  color: red;
+  font-family: sans-serif;
+  font-weight: bold;
+}
+
+@keyframes blinker {
+  50% {
+    opacity: 0;
+  }
+}

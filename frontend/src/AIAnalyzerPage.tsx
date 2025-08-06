@@ -229,6 +229,10 @@ export const AIAnalyzerPage: React.FC<AIAnalyzerPageProps> = ({ navigate }) => {
                         </p>
                     </div>
                 )}
+                <div className='d-flex justify-content-center mt-4'>
+                    <div>Get your treatment done at your door step</div>
+                    <div className='mx-2'><button className="blink" onClick={() => navigate('bookService')}>Book now</button></div>
+                </div>
             </div>
             <div className="d-flex justify-content-center mt-4">
                 <button className="btn btn-link" onClick={() => navigate('dashboard')}>Back to Dashboard</button>
