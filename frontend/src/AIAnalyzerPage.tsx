@@ -88,9 +88,9 @@ export const AIAnalyzerPage: React.FC<AIAnalyzerPageProps> = ({ navigate }) => {
                 * **Tongue and other soft tissues:** Look for any lesions, growths, or unusual textures.
                 * **Overall hygiene:** Assess the presence of plaque or tartar buildup.
             
-            2. **Analysis and Findings:** Based on the systematic assessment, provide a detailed analysis of all findings. Present the findings in a structured, consistent format.
+            2. **Analysis and Findings:** Based on the systematic assessment, provide a detailed analysis of all findings. Present the findings in a structured, consistent format and in a language understandable by a patient.
             
-            3. **Formatting:** Use the following structure for your final output to ensure clarity and consistency:
+            3. **Formatting:** Use the following structure for your final output to ensure clarity and consistency. Please provide a html output highlighting key areas in colors like green, orange and red and with sections and bullets:
             
                 **Analysis of Dental Images**
 
@@ -144,9 +144,10 @@ export const AIAnalyzerPage: React.FC<AIAnalyzerPageProps> = ({ navigate }) => {
             if (result.candidates && result.candidates.length > 0 &&
                 result.candidates[0].content && result.candidates[0].content.parts &&
                 result.candidates[0].content.parts.length > 0) {
+                console.log(result.candidates[0].content.parts);
                 const text = result.candidates[0].content.parts[0].text;
                 // Simple Markdown to HTML conversion for bold text
-                const formattedText = text.replace(/\*\*(.*?)\*\*/g, '<br/><strong>$1</strong>');
+                const formattedText = text; //.replace(/\*\*(.*?)\*\*/g, '<br/><br/><strong>$1</strong><br/>').replace(/\*\*(.*?)\*\*/g, '<br/>');
                 setAnalysisResult(formattedText);
                 setMessage({ text: 'Analysis complete!', type: 'success' });
             } else {
