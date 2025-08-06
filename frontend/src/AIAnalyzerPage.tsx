@@ -79,8 +79,7 @@ export const AIAnalyzerPage: React.FC<AIAnalyzerPageProps> = ({ navigate }) => {
                 })
             );
 
-            /**
-             * const newPrompt = `Analyze the provided dental/mouth images for any potential dental problems, issues, or areas of concern.
+            const newPrompt = `You are an expert dentist. Analyze the provided dental/mouth images for any potential dental problems, issues, or areas of concern.
 
             **Instructions:**
             1. **Initial Assessment (Chain of Thought):** First, internally process the image by systematically examining each major area of the mouth. This includes:
@@ -94,11 +93,14 @@ export const AIAnalyzerPage: React.FC<AIAnalyzerPageProps> = ({ navigate }) => {
             3. **Formatting:** Use the following structure for your final output to ensure clarity and consistency:
             
                 **Analysis of Dental Images**
-            
-                **I. General Observations:**
+
+                **I. Summary:**
+                * Summary of the detailed findings.
+                
+                **II. General Observations:**
                 * State the overall condition of the mouth (e.g., "Good overall hygiene," "Signs of significant plaque buildup").
             
-                **II. Detailed Findings:**
+                **III. Detailed Findings:**
                 * **Teeth:**
                     * Use bullet points for each specific finding.
                     * Example: "Visible interproximal decay on the distal surface of the lower-left molar (#19)."
@@ -114,19 +116,18 @@ export const AIAnalyzerPage: React.FC<AIAnalyzerPageProps> = ({ navigate }) => {
                     * Provide a concise summary of the hygiene level.
                     * Example: "Significant plaque accumulation noted on the lingual surfaces of the lower anterior teeth."
             
-                **III. Potential Concerns/Recommendations:**
+                **IV. Potential Concerns/Recommendations:**
                 * List specific areas that may require a professional dental consultation.
                 * Example: "Further investigation is recommended for the suspected decay on tooth #19."
                 * Example: "Professional cleaning may be necessary to address plaque and tartar buildup."
             
             **Goal:** The final output should be a single, comprehensive analysis that is structured, easy to read, and consistent across different requests for the same image.`
-             */
+            
 
-            const prompt = `Analyze the provided dental/mouth images for any potential dental problems, issues, or areas of concern. Provide a detailed analysis of findings, using as many clear headings or bullet points if applicable.
-            `;
+            //const prompt = `Analyze the provided dental/mouth images for any potential dental problems, issues, or areas of concern. Provide a detailed analysis of findings, using as many clear headings or bullet points if applicable.`;
 
             let chatHistory = [];
-            chatHistory.push({ role: "user", parts: [{ text: prompt }, ...imageParts] });
+            chatHistory.push({ role: "user", parts: [{ text: newPrompt }, ...imageParts] });
 
             const payload = { contents: chatHistory };
             const apiKey = "AIzaSyCwz1oMiUAGoZZtVoxzg2RZ-_LJVXR70o0"; // Canvas will inject API key at runtime

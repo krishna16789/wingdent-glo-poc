@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
-import AuthForm, { DentalLogo } from './AuthForm'; // Import the AuthForm component
+import AuthForm from './AuthForm'; // Import the AuthForm component
 import { PatientDashboard } from './PatientComponents';
 import { DoctorDashboard } from './DoctorComponents';
 import { AdminDashboard } from './AdminComponents';
