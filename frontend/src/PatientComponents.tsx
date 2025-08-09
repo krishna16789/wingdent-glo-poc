@@ -15,6 +15,7 @@ import { TeleconsultationCallPage } from './TeleconsultationCallPage';
 
 // NEW IMPORT: LocationPicker component
 import { LocationPicker } from './LocationPicker';
+import { FeatureSpotlight } from './FeatureSpotlight';
 
 // Define a common interface for dashboard props
 export interface DashboardProps {
@@ -139,8 +140,10 @@ export const PatientDashboard: React.FC<DashboardProps> = ({ navigate, currentPa
                 }
 
                 return (
-                    <div className="container">
-                        <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
+                    <div>
+                        <FeatureSpotlight /> {/* NEW: Feature Spotlight carousel */}
+
+                        <div className="card p-4 p-md-5 rounded-3 mb-4">
                             <MessageDisplay message={message} />
 
                             <div className="text-center mb-4">
@@ -226,7 +229,7 @@ export const PatientDashboard: React.FC<DashboardProps> = ({ navigate, currentPa
                                 </div>
                             </nav>
                             <div className="d-none d-lg-block">
-                                <div className="row g-4 mb-5 mt-5">                 
+                                <div className="row g-4 mb-5 mt-5">
                                     <div className="col-md-4">
                                         <div className="card h-100 bg-info text-white shadow-sm rounded-3">
                                             <div className="card-body d-flex flex-column justify-content-between">
@@ -966,12 +969,6 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
                                                 <div className="d-flex justify-content-between align-items-center mt-auto pt-3 border-top">
                                                     <span>Starting at:</span>
                                                     <span className="fw-bold text-primary fs-5">₹{service.base_price.toFixed(2)}</span>
-                                                    <button
-                                                        className="btn btn-primary"
-                                                        onClick={() => handleServiceSelect(service)}
-                                                    >
-                                                        Select
-                                                    </button>
                                                 </div>
                                             </div>
                                         </div>

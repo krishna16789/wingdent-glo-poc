@@ -14,7 +14,18 @@ const App: React.FC = () => {
     const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
     const [pageData, setPageData] = useState<any>(null); // State to pass data to pages
     const [isProfileNavOpen, setIsProfileNavOpen] = useState(false);
+    const [showSplash, setShowSplash] = useState(true); // New state for the splash screen
     const profileNavRef = useRef<HTMLDivElement>(null);
+
+    // This useEffect hook manages the splash screen's duration.
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setShowSplash(false);
+        }, 2500); // Display splash screen for 2.5 seconds
+
+        // Cleanup the timer to prevent memory leaks if the component unmounts early.
+        return () => clearTimeout(timer);
+    }, []);
 
     // This useEffect hook handles clicks outside the profile navigation drawer to close it.
     useEffect(() => {
@@ -40,12 +51,13 @@ const App: React.FC = () => {
     };
 
     const toggleProfileNav = () => {
-        setIsProfileNavOpen(!isProfileNavOpen);
+        setIsProfileNavOpen(prev => !prev);
     };
+
     // Determine the user's role and render the appropriate dashboard
     const renderDashboard = () => {
         if (!user || !user.profile) {
-            return <MessageDisplay message={{text:"User profile not loaded.",type:"error"}} />;
+            return <MessageDisplay message={{ text: "User profile not loaded.", type: "error" }} />;
         }
 
         switch (currentPage) {
@@ -60,7 +72,7 @@ const App: React.FC = () => {
                     case 'superadmin':
                         return <SuperAdminDashboard navigate={navigate} currentPage={currentPage} pageData={pageData} />;
                     default:
-                        return <MessageDisplay message={{text:"Unknown user role." ,type:"error"}} />;
+                        return <MessageDisplay message={{ text: "Unknown user role.", type: "error" }} />;
                 }
             // Specific pages for Patient role
             case 'bookService':
@@ -107,9 +119,22 @@ const App: React.FC = () => {
             case 'aiAnalyzerPage': // NEW: Route for AI Analyzer
                 return <AIAnalyzerPage navigate={navigate} />;
             default:
-                return <MessageDisplay message={{text:"Page not found or invalid route.",type:"error"}} />;
+                return <MessageDisplay message={{ text: "Page not found or invalid route.", type: "error" }} />;
         }
     };
+
+    // --- NEW Splash Screen Rendering Logic ---
+    if (showSplash) {
+        return (
+            <div className="d-flex flex-column justify-content-center align-items-center min-vh-100 bg-white text-center">
+                <img src="wingdent-glo.png" alt="Wingdent-Glo Logo" className="rounded-circle mb-3 animate-pulse" style={{ width: '100px', height: '100px' }} />
+                <h2 className="fw-bold text-primary">Wingdent-Glo</h2>
+                <p className="text-secondary mt-2">India's first AI powered Dental Platform Connecting Patients and Doctors</p>
+            </div>
+        );
+    }
+    // --- END NEW Splash Screen Rendering Logic ---
+
 
     if (loading) {
         return (
@@ -130,7 +155,7 @@ const App: React.FC = () => {
             {/* Modern Header */}
             <header className="d-flex align-items-center justify-content-between p-3 bg-white shadow-sm sticky-top d-flex d-lg-none">
                 <div className="d-flex align-items-center">
-                    <img src="wingdent-glo.png" alt="Wingdent-Glo Logo" className="rounded me-2" style={{width: '40px', height: '40px'}} />
+                    <img src="wingdent-glo.png" alt="Wingdent-Glo Logo" className="rounded me-2" style={{ width: '40px', height: '40px' }} />
                     <h5 className="mb-0 fw-bold text-primary">Wingdent-Glo</h5>
                 </div>
                 <div className="d-flex align-items-center">
@@ -199,7 +224,7 @@ const App: React.FC = () => {
             <nav className="d-none d-lg-block navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
                 <div className="container-fluid">
                     <a className="navbar-brand d-flex align-items-center" href="#" onClick={() => navigate('dashboard')}>
-                        <img alt="wingdent-glo logo" src="wingdent-glo.png" style={{backgroundColor:"white", width: "40px", height: "40px"}}/>
+                        <img alt="wingdent-glo logo" src="wingdent-glo.png" style={{ backgroundColor: "white", width: "40px", height: "40px" }} />
                         <span className="h4 mb-0 text-white ms-2">Wingdent-Glo</span>
                     </a>
                     <ul className="navbar-nav ms-auto mb-2 mb-lg-0 align-items-lg-center">
