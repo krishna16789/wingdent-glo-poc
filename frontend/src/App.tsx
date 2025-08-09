@@ -126,32 +126,25 @@ const App: React.FC = () => {
                     <div className="collapse navbar-collapse" id="navbarNav">
                         <ul className="navbar-nav ms-auto mb-2 mb-lg-0 align-items-lg-center">
                             <li className="nav-item">
-                                <span className="navbar-text me-lg-3 text-white">
+                                <a className="navbar-text me-lg-3 text-white">
                                     {user.email} ({user.profile?.role || 'N/A'})
-                                </span>
+                                </a>
                             </li>
-                            {user.profile?.id && (
-                                <li className="nav-item">
-                                    <span className="navbar-text me-lg-3 text-white-50 small">
-                                        User ID: {user.profile.id}
-                                    </span>
-                                </li>
-                            )}
                             <li className="nav-item">
-                                <button
+                                <a
                                     onClick={() => navigate('aiAnalyzerPage')}
                                     className="btn btn-outline-info w-100 w-lg-auto me-lg-2 mt-2 mt-lg-0"
                                 >
                                     AI Analyzer
-                                </button>
+                                </a>
                             </li>
                             <li className="nav-item">
-                                <button
+                                <a
                                     onClick={logout}
                                     className="btn btn-outline-light w-100 w-lg-auto mt-2 mt-lg-0"
                                 >
                                     Logout
-                                </button>
+                                </a>
                             </li>
                         </ul>
                     </div>
@@ -162,6 +155,7 @@ const App: React.FC = () => {
             <main className="container flex-grow-1 py-4">
                 <MessageDisplay message={message} />
                 {renderDashboard()}
+                <div className='d-flex justify-content-center'>&copy; Wingdent Pvt Ltd</div>
             </main>
         </div>
     );

@@ -139,57 +139,32 @@ export const PatientDashboard: React.FC<DashboardProps> = ({ navigate, currentPa
                 }
 
                 return (
-                    <div className="container py-4">
+                    <div className="container">
                         <div className="card shadow-lg p-4 p-md-5 rounded-3 mb-4">
-                            <h2 className="h3 fw-bold text-success mb-4 text-center">Patient Dashboard</h2>
                             <MessageDisplay message={message} />
 
                             <div className="text-center mb-4">
-                                <img
+                                <div className='d-flex justify-content-center'><img
                                     src={user?.photoURL || "https://placehold.co/100x100/007bff/ffffff?text=P"}
                                     onError={(e: any) => { e.target.onerror = null; e.target.src="https://placehold.co/100x100/007bff/ffffff?text=P"; }}
                                     alt="Profile"
                                     className="rounded-circle mb-3"
                                     style={{ width: '100px', height: '100px', objectFit: 'cover', border: '3px solid #007bff' }}
-                                />
-                                <h4 className="fw-bold text-dark">{user?.profile?.full_name || user?.email || 'Patient'}</h4>
-                                <p className="text-muted mb-1">Role: {user?.profile?.role}</p>
-                                <p className="small text-break text-muted">User ID: <span className="font-monospace">{user?.uid}</span></p>
+                                /></div>
+                                <h4 className="fw-bold text-dark">Welcome {user?.profile?.full_name || user?.email || 'Patient'}</h4>
                             </div>
 
-                            <div className="row g-4 mb-5">
+                            <div className="row g-4">
                                 <div className="col-md-4">
                                     <div className="card h-100 bg-primary text-white shadow-sm rounded-3">
                                         <div className="card-body d-flex flex-column justify-content-between">
                                             <h5 className="card-title fw-bold">Book New Service</h5>
                                             <p className="card-text">Quickly schedule your next dental appointment.</p>
-                                            <button className="btn btn-light text-primary mt-3" onClick={() => navigate('bookService')}>Book Now</button>
+                                            <button className="btn btn-light text-primary mt-3" onClick={() => navigate('bookService')}><i className="fas fa-calendar-plus me-2"></i>Book Now</button>
                                         </div>
                                     </div>
                                 </div>
                                 <div className="col-md-4">
-                                    <div className="card h-100 bg-info text-white shadow-sm rounded-3">
-                                        <div className="card-body d-flex flex-column justify-content-between">
-                                            <h5 className="card-title fw-bold">My Bookings</h5>
-                                            <p className="card-text">View and manage your upcoming and past appointments.</p>
-                                            <p className="card-text fs-4 fw-bold">{upcomingAppointmentsCount} Upcoming</p>
-                                            <button className="btn btn-light text-info mt-3" onClick={() => navigate('myBookings')}>View Bookings</button>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-4">
-                                    <div className="card h-100 bg-secondary text-white shadow-sm rounded-3">
-                                        <div className="card-body d-flex flex-column justify-content-between">
-                                            <h5 className="card-title fw-bold">My Addresses</h5>
-                                            <p className="card-text">Manage your saved addresses for quick booking.</p>
-                                            <button className="btn btn-light text-secondary mt-3" onClick={() => navigate('myAddresses')}>Manage Addresses</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="row g-4 mb-5">
-                                <div className="col-md-6">
                                     <div className="card h-100 shadow-sm rounded-3">
                                         <div className="card-body">
                                             <h5 className="card-title fw-bold text-primary">Latest Appointment Status</h5>
@@ -211,7 +186,7 @@ export const PatientDashboard: React.FC<DashboardProps> = ({ navigate, currentPa
                                         </div>
                                     </div>
                                 </div>
-                                <div className="col-md-6">
+                                <div className="d-none d-lg-block col-md-4">
                                     <div className="card h-100 shadow-sm rounded-3">
                                         <div className="card-body">
                                             <h5 className="card-title fw-bold text-success">Notifications & Announcements</h5>
@@ -227,25 +202,71 @@ export const PatientDashboard: React.FC<DashboardProps> = ({ navigate, currentPa
                                     </div>
                                 </div>
                             </div>
-
-                            <div className="row g-4 mb-4">
-                                <div className="col-md-12">
-                                    <div className="card h-100 shadow-sm rounded-3">
-                                        <div className="card-body">
-                                            <h5 className="card-title fw-bold text-primary">My Health Data</h5>
-                                            <p className="card-text text-muted">Access your prescriptions, health records, and consultation history.</p>
-                                            <div className="d-grid gap-2 mt-3">
-                                                <button className="btn btn-outline-primary" onClick={() => navigate('myPrescriptions')}>My Prescriptions</button>
-                                                <button className="btn btn-outline-primary" onClick={() => navigate('myHealthRecords')}>My Health Records</button>
-                                                <button className="btn btn-outline-primary" onClick={() => navigate('myConsultations')}>My Consultations</button>
+                            <nav className="navbar navbar-expand-lg d-lg-none my-3">
+                                <div className="container-fluid p-0">
+                                    <button className="navbar-toggler w-100 text-start" type="button" data-bs-toggle="collapse" data-bs-target="#patientMobileMenu" aria-controls="patientMobileMenu" aria-expanded="false" aria-label="Toggle navigation">
+                                        <span className="navbar-toggler-icon me-2"></span>
+                                        <span className="fw-bold">More</span>
+                                    </button>
+                                    <div className="collapse navbar-collapse" id="patientMobileMenu">
+                                        <ul className="navbar-nav w-100 mt-2">
+                                            <li className="nav-item mb-2">
+                                                <button className="btn btn-outline-info w-100" onClick={() => navigate('myBookings')}><i className="fas fa-calendar-alt me-2"></i>My Bookings ({upcomingAppointmentsCount} Upcoming)</button>
+                                            </li>
+                                            <li className="nav-item mb-2">
+                                                <button className="btn btn-outline-success w-100" onClick={() => navigate('myPrescriptions')}><i className="fas fa-file-medical me-2"></i>My Prescriptions</button>
+                                            </li>
+                                            <li className="nav-item mb-2">
+                                                <button className="btn btn-outline-success w-100" onClick={() => navigate('myHealthRecords')}><i className="fas fa-book-medical me-2"></i>My Health Records</button>
+                                            </li>
+                                            <li className="nav-item mb-2">
+                                                <button className="btn btn-outline-success w-100" onClick={() => navigate('myConsultations')}><i className="fas fa-notes-medical me-2"></i>My Consultations</button>
+                                            </li>
+                                            <li className="nav-item mb-2">
+                                                <button className="btn btn-outline-secondary w-100" onClick={() => navigate('myAddresses')}><i className="fas fa-map-marker-alt me-2"></i>My Addresses</button>
+                                            </li>
+                                            <li className="nav-item mb-2">
+                                                <button className="btn btn-outline-danger w-100" onClick={() => navigate('helpFAQ')}><i className="fas fa-question-circle me-2"></i>Help & FAQs</button>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </nav>
+                            <div className="d-none d-lg-block">
+                                <div className="row g-4 mb-5 mt-5">                 
+                                    <div className="col-md-4">
+                                        <div className="card h-100 bg-info text-white shadow-sm rounded-3">
+                                            <div className="card-body d-flex flex-column justify-content-between">
+                                                <h5 className="card-title fw-bold">My Bookings</h5>
+                                                <p className="card-text">View and manage your upcoming and past appointments.</p>
+                                                <p className="card-text fs-4 fw-bold">{upcomingAppointmentsCount} Upcoming</p>
+                                                <button className="btn btn-light text-info mt-3" onClick={() => navigate('myBookings')}><i className="fas fa-calendar-alt me-2"></i>View Bookings</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="col-md-4">
+                                        <div className="card h-100 bg-secondary text-white shadow-sm rounded-3">
+                                            <div className="card-body d-flex flex-column justify-content-between">
+                                                <h5 className="card-title fw-bold">My Addresses</h5>
+                                                <p className="card-text">Manage your saved addresses for quick booking.</p>
+                                                <button className="btn btn-light text-secondary mt-3" onClick={() => navigate('myAddresses')}><i className="fas fa-map-marker-alt me-2"></i>Manage Addresses</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="col-md-4">
+                                        <div className="card h-100 shadow-sm rounded-3">
+                                            <div className="card-body">
+                                                <h5 className="card-title fw-bold text-primary">My Health Data</h5>
+                                                <p className="card-text text-muted">Access your prescriptions, health records, and consultation history.</p>
+                                                <div className="d-grid gap-2 mt-3">
+                                                    <button className="btn btn-outline-primary" onClick={() => navigate('myPrescriptions')}><i className="fas fa-file-medical me-2"></i>My Prescriptions</button>
+                                                    <button className="btn btn-outline-primary" onClick={() => navigate('myHealthRecords')}><i className="fas fa-book-medical me-2"></i>My Health Records</button>
+                                                    <button className="btn btn-outline-primary" onClick={() => navigate('myConsultations')}><i className="fas fa-notes-medical me-2"></i>My Consultations</button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-
-                            <div className="d-flex justify-content-center mt-4">
-                                <button className="btn btn-link" onClick={logout}>Logout</button>
                             </div>
                         </div>
                     </div>
@@ -280,7 +301,7 @@ export const PatientDashboard: React.FC<DashboardProps> = ({ navigate, currentPa
     };
 
     return (
-        <div className="container py-4">
+        <div className="container">
             {renderPatientPage()}
         </div>
     );
@@ -1454,8 +1475,9 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string | number, data?:
 
                 {appointments.length === 0 ? (
                     <p className="text-muted text-center">No {filterStatus} appointments found.</p>
-                ) : (
-                    <div className="table-responsive">
+                ) : (<>
+                    <div className="d-none d-md-block">
+                        <div className="table-responsive">
                         <table className="table table-striped table-hover">
                             <thead>
                                 <tr>
@@ -1497,7 +1519,35 @@ export const MyBookingsPage: React.FC<{ navigate: (page: string | number, data?:
                                 ))}
                             </tbody>
                         </table>
+                        </div>
                     </div>
+                     <div className="d-md-none">
+                     {appointments.map(appt => (
+                        <div key={appt.id} className="card mb-3">
+                            <div className="card-body">
+                                <h5 className="card-title">{appt.serviceName}</h5>
+                                <h6 className="card-subtitle mb-2 text-muted">{appt.requested_date} at {appt.requested_time_slot}</h6>
+                                <p className="card-text mb-1"><strong>Doctor:</strong> {appt.doctorName}</p>
+                                <p className="card-text mb-1"><strong>Type:</strong> {appt.appointment_type === 'in_person' ? 'In-person' : 'Teleconsultation'}</p>
+                                <p className="card-text mb-1"><strong>Status:</strong> <span className={`badge ${getStatusBadgeClass(appt.status)}`}>{appt.status.replace(/_/g, ' ').toUpperCase()}</span></p>
+                                <p className="card-text mb-3"><strong>Payment:</strong> <span className={`badge ${appt.payment_status === 'paid' ? 'bg-success' : 'bg-secondary'}`}>{appt.payment_status.toUpperCase()}</span></p>
+                                {appt.appointment_type === 'in_person' && ['pending_assignment', 'assigned', 'confirmed'].includes(appt.status) && (
+                                    <>
+                                        <button className="btn btn-sm btn-outline-danger me-2" onClick={() => setShowCancelModal(appt)}>Cancel</button>
+                                        <button className="btn btn-sm btn-outline-info" onClick={() => handleRescheduleClick(appt)}>Reschedule</button>
+                                    </>
+                                )}
+                                {appt.appointment_type === 'teleconsultation' && appt.status === 'confirmed' && isJoinCallActive(appt) && (
+                                    <button className="btn btn-sm btn-success" onClick={() => handleJoinCall(appt.teleconsultationLink!)}>Join Call</button>
+                                )}
+                                {appt.status === 'completed' && appt.payment_status === 'paid' && (
+                                    <button className="btn btn-sm btn-success" onClick={() => handleFeedbackClick(appt)}>Give Feedback</button>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                    </div>
+                    </>
                 )}
             </div>
 

@@ -71,8 +71,23 @@ const AuthForm: React.FC = () => {
 
                 {loading && <LoadingSpinner />}
 
+                {!loading &&  <div className="d-grid gap-2">
+                            <button
+                                onClick={signInWithGoogle}
+                                className="btn btn-outline-secondary btn-lg d-flex align-items-center justify-content-center"
+                            >
+                                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google logo" style={{ width: '1.2em', height: '1.2em', marginRight: '0.5em' }} />
+                                Sign in with Google
+                            </button>
+                        </div>}
+
                 {!loading && (
-                    <form onSubmit={handleAuthSubmit} className="needs-validation" noValidate>
+                    <div className="mt-4">
+                        <div className="text-center my-3">
+                            <span className="text-muted">Or continue with</span>
+                        </div>
+
+                        <form onSubmit={handleAuthSubmit} className="needs-validation" noValidate>
                         <div className="mb-3">
                             <label htmlFor="email" className="form-label">Email Address</label>
                             <input
@@ -217,23 +232,6 @@ const AuthForm: React.FC = () => {
                             </button>
                         </div>
                     </form>
-                )}
-
-                {!loading && (
-                    <div className="mt-4">
-                        <div className="text-center my-3">
-                            <span className="text-muted">Or continue with</span>
-                        </div>
-
-                        <div className="d-grid gap-2 mb-3">
-                            <button
-                                onClick={signInWithGoogle}
-                                className="btn btn-outline-secondary btn-lg d-flex align-items-center justify-content-center"
-                            >
-                                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google logo" style={{ width: '1.2em', height: '1.2em', marginRight: '0.5em' }} />
-                                Sign in with Google
-                            </button>
-                        </div>
 
                         <div className="text-center mt-3">
                             {authMode === 'login' ? (
