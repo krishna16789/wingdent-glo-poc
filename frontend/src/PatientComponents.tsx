@@ -144,13 +144,6 @@ export const PatientDashboard: React.FC<DashboardProps> = ({ navigate, currentPa
                             <MessageDisplay message={message} />
 
                             <div className="text-center mb-4">
-                                <div className='d-flex justify-content-center'><img
-                                    src={user?.photoURL || "https://placehold.co/100x100/007bff/ffffff?text=P"}
-                                    onError={(e: any) => { e.target.onerror = null; e.target.src="https://placehold.co/100x100/007bff/ffffff?text=P"; }}
-                                    alt="Profile"
-                                    className="rounded-circle mb-3"
-                                    style={{ width: '100px', height: '100px', objectFit: 'cover', border: '3px solid #007bff' }}
-                                /></div>
                                 <h4 className="fw-bold text-dark">Welcome {user?.profile?.full_name || user?.email || 'Patient'}</h4>
                             </div>
 
@@ -202,7 +195,7 @@ export const PatientDashboard: React.FC<DashboardProps> = ({ navigate, currentPa
                                     </div>
                                 </div>
                             </div>
-                            <nav className="navbar navbar-expand-lg d-lg-none my-3">
+                            <nav className="navbar navbar-expand-lg d-none my-3">
                                 <div className="container-fluid p-0">
                                     <button className="navbar-toggler w-100 text-start" type="button" data-bs-toggle="collapse" data-bs-target="#patientMobileMenu" aria-controls="patientMobileMenu" aria-expanded="false" aria-label="Toggle navigation">
                                         <span className="navbar-toggler-icon me-2"></span>
@@ -754,9 +747,8 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
     };
 
     const handleAppointmentTypeChange = (type: 'in_person' | 'teleconsultation') => {
-        // NEW: Restrict teleconsultation to "Consult" service only
-        if (type === 'teleconsultation' && selectedService?.name?.toLowerCase() !== 'consult') {
-            setMessage({ text: "Teleconsultation is only available for 'Consult' service.", type: "warning" });
+        if (type === 'teleconsultation' && selectedService?.name?.toLowerCase() !== 'consultation') {
+            setMessage({ text: "Teleconsultation is only available for 'Consultation' service.", type: "warning" });
             return; // Prevent selection of teleconsultation for other services
         }
 
@@ -972,6 +964,7 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
                                                 <h5 className="card-title">{service.name}</h5>
                                                 <p className="card-text text-muted flex-grow-1">{service.description}</p>
                                                 <div className="d-flex justify-content-between align-items-center mt-auto pt-3 border-top">
+                                                    <span>Starting at:</span>
                                                     <span className="fw-bold text-primary fs-5">₹{service.base_price.toFixed(2)}</span>
                                                     <button
                                                         className="btn btn-primary"
@@ -1010,7 +1003,7 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
                                 </label>
                             </div>
                             {/* NEW: Conditionally render Teleconsultation option */}
-                            {selectedService?.name?.toLowerCase() === 'consult' && (
+                            {selectedService?.name?.toLowerCase() === 'consultation' && (
                                 <div className="form-check">
                                     <input
                                         className="form-check-input"
