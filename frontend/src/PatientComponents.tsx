@@ -965,7 +965,9 @@ export const BookServicePage: React.FC<{ navigate: (page: string | number, data?
                                 {services.map(service => (
                                     <div className="col-md-4" key={service.id}>
                                         <div className="card h-100 shadow-sm service-card" onClick={() => handleServiceSelect(service)} style={{ cursor: 'pointer' }}>
-                                            <img src={service.image || "https://placehold.co/150x100/e9ecef/000000?text=Service"} className="card-img-top" alt={service.name} onError={(e: any) => { e.target.onerror = null; e.target.src="https://placehold.co/150x100/e9ecef/000000?text=Service"; }} />
+                                            <img style={{
+                                                height: "300px"
+                                            }} src={service.image || "https://placehold.co/150x100/e9ecef/000000?text=Service"} className="card-img-top" alt={service.name} onError={(e: any) => { e.target.onerror = null; e.target.src="https://placehold.co/150x100/e9ecef/000000?text=Service"; }} />
                                             <div className="card-body d-flex flex-column">
                                                 <h5 className="card-title">{service.name}</h5>
                                                 <p className="card-text text-muted flex-grow-1">{service.description}</p>
